@@ -870,11 +870,20 @@ func ProxyIdentityFromURL(rawURL string) string {
 	if rawURL == "" {
 		return ""
 	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil || parsed.User == nil {
+	// {account}/{email} 模板含 URL 标准之外的字符，url.Parse 会报错；
+	// 这里手工截取 scheme 与 @ 之间的用户名部分。
+	rest := rawURL
+	if schemeIdx := strings.Index(rawURL, "://"); schemeIdx > 0 {
+		rest = rawURL[schemeIdx+3:]
+	}
+	atIdx := strings.Index(rest, "@")
+	if atIdx <= 0 {
 		return ""
 	}
-	username := parsed.User.Username()
+	username := rest[:atIdx]
+	if colonIdx := strings.Index(username, ":"); colonIdx >= 0 {
+		username = username[:colonIdx]
+	}
 	if username == "" {
 		return ""
 	}
