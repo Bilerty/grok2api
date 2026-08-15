@@ -61,6 +61,7 @@ type PublicNode struct {
 	Enabled              bool
 	ProxyConfigured      bool
 	ProxyPool            bool
+	ProxyIdentity        string
 	SourceID             uint64
 	AccountCapacity      int
 	UserAgent            string

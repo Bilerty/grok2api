@@ -826,10 +826,17 @@ func (s *Service) publicNode(value domain.Node) domain.PublicNode {
 	if proxyPool {
 		health, failureCount, cooldownUntil, lastError = 1, 0, nil, ""
 	}
+	proxyIdentity := ""
+	if s != nil && s.cipher != nil && strings.TrimSpace(value.EncryptedProxyURL) != "" {
+		if decrypted, err := s.cipher.Decrypt(value.EncryptedProxyURL); err == nil {
+			proxyIdentity = ProxyIdentityFromURL(decrypted)
+		}
+	}
 	return domain.PublicNode{
 		ID: value.ID, Name: value.Name, Scope: value.Scope, Enabled: value.Enabled,
 		ProxyConfigured: value.EncryptedProxyURL != "", UserAgent: userAgent, CookieConfigured: value.EncryptedCloudflareCookie != "",
 		ProxyPool:         proxyPool,
+		ProxyIdentity:     proxyIdentity,
 		SourceID:          value.SourceID,
 		AccountCapacity:   value.AccountCapacity,
 		AccountBoundProxy: accountBoundProxy,
@@ -848,6 +855,34 @@ func (s *Service) accountBoundProxy(value domain.Node) bool {
 	}
 	proxyURL, err := s.cipher.Decrypt(value.EncryptedProxyURL)
 	return err == nil && strings.Contains(proxyURL, ProxyAccountPlaceholder)
+}
+
+// ProxyIdentityFromURL 从代理 URL 提取可比较的身份串：
+// 取 URL 用户名，按最后一个 "." 切分；platform 部分保留原样，
+// account 部分规范为字面量 {account}。
+//
+// 例：
+//   - platformA.{account}  -> platformA.{account}
+//   - resin.p1.user123     -> resin.p1.{account}
+//   - plainuser             -> plainuser（无小数点，原样）
+func ProxyIdentityFromURL(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.User == nil {
+		return ""
+	}
+	username := parsed.User.Username()
+	if username == "" {
+		return ""
+	}
+	idx := strings.LastIndex(username, ".")
+	if idx <= 0 || idx == len(username)-1 {
+		return username
+	}
+	return username[:idx] + ".{account}"
 }
 
 func NormalizeProxyURL(value string) (string, error) {
