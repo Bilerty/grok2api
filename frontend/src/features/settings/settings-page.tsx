@@ -18,6 +18,7 @@ import { VersionUpdateSection } from "@/features/system/version-update";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isByteSizeUnit, isDurationUnit, MAX_ROUTING_ATTEMPTS, type ByteSizeValue, type DurationValue, UNLIMITED_ROUTING_ATTEMPTS } from "@/features/settings/settings-model";
 import { useSettings } from "@/features/settings/use-settings";
+import { scheduleConsole24hResets } from "@/features/settings/settings-api";
 import { ErrorState } from "@/shared/components/data-state";
 import { cn } from "@/shared/lib/cn";
 
@@ -31,6 +32,22 @@ export function SettingsPage() {
   const autoCleanEnabled = form.watch("accounts.autoCleanReauthEnabled") === true;
   const buildForbiddenReauthEnabled = form.watch("accounts.markBuildForbiddenReauth") === true;
   const segmentedSelectorEnabled = form.watch("routing.segmentedSelector.enabled") === true;
+  const excludeConsoleBotFlagged = form.watch("accounts.excludeConsoleBotFlaggedFromScheduling") === true;
+  const [schedulePending, setSchedulePending] = useState(false);
+  const [scheduleResult, setScheduleResult] = useState<number | null>(null);
+  const [scheduleError, setScheduleError] = useState(false);
+  const handleScheduleConsoleResets = async () => {
+    setSchedulePending(true);
+    setScheduleError(false);
+    try {
+      const result = await scheduleConsole24hResets();
+      setScheduleResult(result.scheduled);
+    } catch {
+      setScheduleError(true);
+    } finally {
+      setSchedulePending(false);
+    }
+  };
 
   if (settingsQuery.isError) {
     return <ErrorState message={settingsQuery.error.message} onRetry={() => void settingsQuery.refetch()} />;
@@ -420,8 +437,51 @@ export function SettingsPage() {
                         <Switch
                           id="accounts-exclude-console-bot-flagged"
                           checked={Boolean(field.value)}
-                          onCheckedChange={field.onChange}
+                          onCheckedChange={(checked) => {
+                            field.onChange(checked);
+                            if (!checked) {
+                              form.setValue("accounts.consoleDailyResetSchedulingEnabled", false, { shouldDirty: true });
+                            }
+                          }}
                         />
+                      </div>
+                    )}
+                  />
+                </SettingsField>
+                <SettingsField
+                  controlId="accounts-console-daily-reset-scheduling"
+                  label={t("settings.accounts.consoleDailyResetScheduling")}
+                  description={t("settings.accounts.consoleDailyResetSchedulingHelp")}
+                >
+                  <Controller
+                    control={form.control}
+                    name="accounts.consoleDailyResetSchedulingEnabled"
+                    render={({ field }) => (
+                      <div className="flex min-h-9 items-center gap-3">
+                        <Switch
+                          id="accounts-console-daily-reset-scheduling"
+                          checked={Boolean(field.value) && excludeConsoleBotFlagged}
+                          disabled={!excludeConsoleBotFlagged}
+                          onCheckedChange={(checked) => {
+                            if (!excludeConsoleBotFlagged) return;
+                            field.onChange(checked);
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={!excludeConsoleBotFlagged || schedulePending}
+                          onClick={() => void handleScheduleConsoleResets()}
+                        >
+                          {schedulePending ? <Spinner /> : null}{t("settings.accounts.consoleScheduleNow")}
+                        </Button>
+                        {scheduleResult !== null && !scheduleError ? (
+                          <span className="text-xs text-muted-foreground">{t("settings.accounts.consoleScheduledCount", { count: scheduleResult })}</span>
+                        ) : null}
+                        {scheduleError ? (
+                          <span className="text-xs text-destructive">{t("settings.accounts.consoleScheduleFailed")}</span>
+                        ) : null}
                       </div>
                     )}
                   />

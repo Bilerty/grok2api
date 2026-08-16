@@ -343,6 +343,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 	selector.UpdateExcludeBuildBotFlaggedFromScheduling(cfg.Accounts.ExcludeBuildBotFlaggedFromScheduling)
 	selector.UpdateExcludeConsoleBotFlaggedFromScheduling(cfg.Accounts.ExcludeConsoleBotFlaggedFromScheduling)
 	accountService.UpdateExcludeBuildBotFlaggedFromScheduling(cfg.Accounts.ExcludeBuildBotFlaggedFromScheduling)
+	accountService.SetConsoleDailyResetScheduling(cfg.Accounts.ConsoleDailyResetSchedulingEnabled)
 	consoleAdapter.SetBotFlagReporter(accountService.ReportConsoleBotFlag)
 	egressManager.UpdateAccountIsolatedConnections(cfg.Routing.AccountIsolatedConnections)
 	invalidationService := invalidationapp.NewService(invalidationBus, invalidationSourceInstance(cfg), func(event repository.InvalidationEvent) {
@@ -406,6 +407,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Applicat
 		selector.UpdateExcludeBuildBotFlaggedFromScheduling(next.Accounts.ExcludeBuildBotFlaggedFromScheduling)
 		selector.UpdateExcludeConsoleBotFlaggedFromScheduling(next.Accounts.ExcludeConsoleBotFlaggedFromScheduling)
 		accountService.UpdateExcludeBuildBotFlaggedFromScheduling(next.Accounts.ExcludeBuildBotFlaggedFromScheduling)
+		accountService.SetConsoleDailyResetScheduling(next.Accounts.ConsoleDailyResetSchedulingEnabled)
 		egressManager.UpdateAccountIsolatedConnections(next.Routing.AccountIsolatedConnections)
 		reasoningReplay.UpdateConfig(reasoningreplay.Config{Enabled: next.Routing.ReasoningReplayEnabled, TTL: next.Routing.ReasoningReplayTTL.Value()})
 		gatewayService.UpdateMaxAttempts(next.Routing.MaxAttempts)
@@ -589,6 +591,10 @@ func (a *Application) Run(ctx context.Context) error {
 	})
 	startBackground("credential_refresh", func(taskCtx context.Context) error {
 		a.accounts.RunCredentialRefresh(taskCtx)
+		return nil
+	})
+	startBackground("console_daily_reset", func(taskCtx context.Context) error {
+		a.accounts.RunConsoleDailyResetScheduler(taskCtx)
 		return nil
 	})
 	startBackground("account_auto_clean", func(taskCtx context.Context) error {

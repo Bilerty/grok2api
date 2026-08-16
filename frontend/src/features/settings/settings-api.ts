@@ -31,6 +31,7 @@ export type SettingsConfigDTO = {
     buildForbiddenReauthCodes: string[];
     excludeBuildBotFlaggedFromScheduling: boolean;
     excludeConsoleBotFlaggedFromScheduling: boolean;
+    consoleDailyResetSchedulingEnabled: boolean;
     autoCleanReauthEnabled: boolean;
     autoCleanReauthInterval: string;
     autoCleanReauthMinAge: string;
@@ -127,6 +128,7 @@ const settingsConfigValidator = hasShape({
     buildForbiddenReauthCodes: isOptional(isArrayOf(isString)),
     excludeBuildBotFlaggedFromScheduling: isOptional(isBoolean),
     excludeConsoleBotFlaggedFromScheduling: isOptional(isBoolean),
+    consoleDailyResetSchedulingEnabled: isOptional(isBoolean),
     autoCleanReauthEnabled: isBoolean,
     autoCleanReauthInterval: isString,
     autoCleanReauthMinAge: isString,
@@ -138,6 +140,7 @@ const defaultAccountsConfig = (): SettingsConfigDTO["accounts"] => ({
   buildForbiddenReauthCodes: ["permission-denied"],
   excludeBuildBotFlaggedFromScheduling: false,
   excludeConsoleBotFlaggedFromScheduling: false,
+  consoleDailyResetSchedulingEnabled: false,
   autoCleanReauthEnabled: false,
   autoCleanReauthInterval: "10m",
   autoCleanReauthMinAge: "1h",
@@ -177,6 +180,7 @@ function withSettingsDefaults(snapshot: SettingsSnapshotDTO): SettingsSnapshotDT
         buildForbiddenReauthCodes: accounts.buildForbiddenReauthCodes ?? ["permission-denied"],
         excludeBuildBotFlaggedFromScheduling: accounts.excludeBuildBotFlaggedFromScheduling ?? false,
         excludeConsoleBotFlaggedFromScheduling: accounts.excludeConsoleBotFlaggedFromScheduling ?? false,
+        consoleDailyResetSchedulingEnabled: accounts.consoleDailyResetSchedulingEnabled ?? false,
         autoCleanReauthEnabled: accounts.autoCleanReauthEnabled ?? false,
         autoCleanReauthInterval: accounts.autoCleanReauthInterval || "10m",
         autoCleanReauthMinAge: accounts.autoCleanReauthMinAge || "1h",
@@ -316,6 +320,10 @@ export function getSettings(): Promise<SettingsSnapshotDTO> {
 
 export function updateSettings(revision: string, config: SettingsConfigDTO): Promise<SettingsSnapshotDTO> {
   return apiRequest("/api/admin/v1/settings", { method: "PUT", body: { revision, config } }, decodeSettingsSnapshot);
+}
+
+export function scheduleConsole24hResets(): Promise<{ scheduled: number }> {
+  return apiRequest("/api/admin/v1/accounts/console/schedule-24h-resets", { method: "POST", body: {} }, createObjectDecoder("{ scheduled: number }", { scheduled: isNumber }));
 }
 
 type ListEgressNodesInput = {

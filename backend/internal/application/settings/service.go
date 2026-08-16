@@ -139,6 +139,8 @@ type AccountsConfig struct {
 	ExcludeBuildBotFlaggedFromScheduling bool
 	// ExcludeConsoleBotFlaggedFromScheduling drops Console bot-risk accounts (and linked peers) from scheduling.
 	ExcludeConsoleBotFlaggedFromScheduling bool
+	// ConsoleDailyResetSchedulingEnabled spreads Console quota refreshes across the next 24h daily.
+	ConsoleDailyResetSchedulingEnabled bool
 	AutoCleanReauthEnabled                 bool
 	AutoCleanReauthInterval                string
 	AutoCleanReauthMinAge                  string
@@ -151,6 +153,8 @@ type AccountsConfig struct {
 	ExcludeBuildBotFlaggedFromSchedulingProvided bool
 	// ExcludeConsoleBotFlaggedFromSchedulingProvided preserves the value when an older management client omits the field.
 	ExcludeConsoleBotFlaggedFromSchedulingProvided bool
+	// ConsoleDailyResetSchedulingEnabledProvided preserves the value when an older management client omits the field.
+	ConsoleDailyResetSchedulingEnabledProvided bool
 }
 
 // EditableConfig 聚合管理端允许修改的运行参数。
@@ -431,6 +435,7 @@ func applyDomainConfig(base config.Config, value settingsdomain.Config) config.C
 	}
 	base.Accounts.ExcludeBuildBotFlaggedFromScheduling = value.Accounts.ExcludeBuildBotFlaggedFromScheduling
 	base.Accounts.ExcludeConsoleBotFlaggedFromScheduling = value.Accounts.ExcludeConsoleBotFlaggedFromScheduling
+	base.Accounts.ConsoleDailyResetSchedulingEnabled = value.Accounts.ConsoleDailyResetSchedulingEnabled
 	return base
 }
 
@@ -496,6 +501,7 @@ func toDomainConfig(value config.Config) settingsdomain.Config {
 			BuildForbiddenReauthCodes:              append([]string(nil), value.Accounts.BuildForbiddenReauthCodes...),
 			ExcludeBuildBotFlaggedFromScheduling:   value.Accounts.ExcludeBuildBotFlaggedFromScheduling,
 			ExcludeConsoleBotFlaggedFromScheduling: value.Accounts.ExcludeConsoleBotFlaggedFromScheduling,
+			ConsoleDailyResetSchedulingEnabled:     value.Accounts.ConsoleDailyResetSchedulingEnabled,
 			AutoCleanReauthEnabled:                 value.Accounts.AutoCleanReauthEnabled,
 			AutoCleanReauthInterval:                value.Accounts.AutoCleanReauthInterval.Value(),
 			AutoCleanReauthMinAge:                  value.Accounts.AutoCleanReauthMinAge.Value(),
@@ -594,6 +600,9 @@ func mergeEditable(current config.Config, input EditableConfig) (config.Config, 
 		}
 		if input.Accounts.ExcludeConsoleBotFlaggedFromSchedulingProvided {
 			next.Accounts.ExcludeConsoleBotFlaggedFromScheduling = input.Accounts.ExcludeConsoleBotFlaggedFromScheduling
+		}
+		if input.Accounts.ConsoleDailyResetSchedulingEnabledProvided {
+			next.Accounts.ConsoleDailyResetSchedulingEnabled = input.Accounts.ConsoleDailyResetSchedulingEnabled
 		}
 		next.Accounts.AutoCleanReauthEnabled = input.Accounts.AutoCleanReauthEnabled
 		next.Accounts.AutoCleanIncludeDisabled = input.Accounts.AutoCleanIncludeDisabled
@@ -727,10 +736,12 @@ func toEditable(cfg config.Config) EditableConfig {
 			BuildForbiddenReauthCodes:                    append([]string(nil), cfg.Accounts.BuildForbiddenReauthCodes...),
 			ExcludeBuildBotFlaggedFromScheduling:         cfg.Accounts.ExcludeBuildBotFlaggedFromScheduling,
 			ExcludeConsoleBotFlaggedFromScheduling:       cfg.Accounts.ExcludeConsoleBotFlaggedFromScheduling,
+			ConsoleDailyResetSchedulingEnabled:           cfg.Accounts.ConsoleDailyResetSchedulingEnabled,
 			MarkBuildForbiddenReauthProvided:             true,
 			BuildForbiddenReauthCodesProvided:            true,
 			ExcludeBuildBotFlaggedFromSchedulingProvided: true,
 			ExcludeConsoleBotFlaggedFromSchedulingProvided: true,
+			ConsoleDailyResetSchedulingEnabledProvided:     true,
 			AutoCleanReauthEnabled:                       cfg.Accounts.AutoCleanReauthEnabled,
 			AutoCleanReauthInterval:                      cfg.Accounts.AutoCleanReauthInterval.String(),
 			AutoCleanReauthMinAge:                        cfg.Accounts.AutoCleanReauthMinAge.String(),

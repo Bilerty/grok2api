@@ -425,6 +425,8 @@ type Service struct {
 	autoCleanRevision      uint64
 	autoCleanWake          chan struct{}
 	excludeBuildBotFlagged bool
+	consoleDailyResetEnabled bool
+	consoleDailyResetLastDay string
 	buildBotFlagCache      *resultcache.Cache[string, []uint64]
 	logger                 *slog.Logger
 	now                    func() time.Time
@@ -667,6 +669,103 @@ func (s *Service) ReportConsoleBotFlag(ctx context.Context, credential accountdo
 		}
 		if changed {
 			s.logger.Info("console_bot_flag_changed", "account_id", id, "source", source, "checked_at", checkedAt.Format(time.RFC3339))
+		}
+	}
+}
+
+// --- Console 每日排班刷新 ---
+
+const (
+	consoleDailyResetScheduleWindow = 24 * time.Hour
+	consoleDailyResetTickInterval   = time.Minute
+	consoleDailyResetBatchSize      = 500
+)
+
+// SetConsoleDailyResetScheduling hot-updates 每日排班开关（设置热更新时调用）。
+func (s *Service) SetConsoleDailyResetScheduling(value bool) {
+	s.autoCleanMu.Lock()
+	s.consoleDailyResetEnabled = value
+	s.autoCleanMu.Unlock()
+}
+
+func (s *Service) consoleDailyResetSchedulingEnabled() bool {
+	s.autoCleanMu.RLock()
+	defer s.autoCleanMu.RUnlock()
+	return s.consoleDailyResetEnabled
+}
+
+// ScheduleConsoleResets 将全部 Console 账号的额度刷新（含风控探测）随机排布在
+// [from, from+24h) 内，直接排入额度恢复队列；返回排班数量。
+// 排班只写内存队列：进程重启会丢失，由启动排班或次日 0:00 重排兜底。
+func (s *Service) ScheduleConsoleResets(ctx context.Context, from time.Time) (int, error) {
+	if s.quotaQueue == nil {
+		return 0, fmt.Errorf("额度恢复队列未初始化")
+	}
+	now := s.now().UTC()
+	scheduled := 0
+	var afterID uint64
+	for {
+		values, _, err := s.accounts.ListProviderAccountBatch(ctx, accountdomain.ProviderConsole, afterID, consoleDailyResetBatchSize)
+		if err != nil {
+			return scheduled, err
+		}
+		for _, value := range values {
+			offset := time.Duration(rand.Int64N(int64(consoleDailyResetScheduleWindow)))
+			due := from.Add(offset)
+			// 每日任务在 0:00 后运行；落回过去的排班时间夹到 [now, now+1h) 内。
+			if due.Before(now) {
+				due = now.Add(time.Duration(rand.Int64N(int64(time.Hour))))
+			}
+			if scheduleErr := s.quotaQueue.ScheduleQuotaRecovery(ctx, accountdomain.QuotaRecoveryEvent{
+				AccountID: value.ID, Mode: "console", DueAt: due,
+			}); scheduleErr != nil {
+				return scheduled, scheduleErr
+			}
+			scheduled++
+		}
+		if len(values) < consoleDailyResetBatchSize {
+			return scheduled, nil
+		}
+		afterID = values[len(values)-1].ID
+	}
+}
+
+// RunConsoleDailyResetScheduler 每日 UTC 0:00（开关开启时）触发一次全量排班；
+// 启动时若开关已开启且当天尚未排班，也会立即排一次（覆盖重启丢排班）。
+func (s *Service) RunConsoleDailyResetScheduler(ctx context.Context) {
+	runOnce := func() {
+		if !s.consoleDailyResetSchedulingEnabled() {
+			return
+		}
+		now := s.now().UTC()
+		day := now.Format("2006-01-02")
+		if s.consoleDailyResetLastDay == day {
+			return
+		}
+		midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		base := midnight
+		// 当天已过 0:00 较久（如启动或中途开启开关）：以当前时刻为起点排布，避免大量夹紧聚集。
+		if now.Sub(midnight) > 5*time.Minute {
+			base = now
+		}
+		count, err := s.ScheduleConsoleResets(context.WithoutCancel(ctx), base)
+		if err != nil {
+			s.logger.Warn("console_daily_reset_schedule_failed", "error", err)
+			return
+		}
+		s.consoleDailyResetLastDay = day
+		s.logger.Info("console_daily_reset_scheduled", "scheduled", count, "day", day, "base", base.Format(time.RFC3339))
+	}
+
+	runOnce()
+	ticker := time.NewTicker(consoleDailyResetTickInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			runOnce()
 		}
 	}
 }

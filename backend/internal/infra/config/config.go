@@ -284,6 +284,9 @@ type AccountsConfig struct {
 	// ExcludeConsoleBotFlaggedFromScheduling removes Console bot-risk accounts
 	// (console_bot_flag_source in {1,2}) and their linked Web/Build peers from scheduling.
 	ExcludeConsoleBotFlaggedFromScheduling bool `yaml:"excludeConsoleBotFlaggedFromScheduling"`
+	// ConsoleDailyResetSchedulingEnabled spreads Console quota refreshes across the
+	// next 24 hours every UTC midnight (and once on startup when enabled).
+	ConsoleDailyResetSchedulingEnabled bool `yaml:"consoleDailyResetSchedulingEnabled"`
 	AutoCleanReauthEnabled               bool
 	AutoCleanReauthInterval              Duration
 	AutoCleanReauthMinAge                Duration
@@ -860,6 +863,7 @@ func defaultConfig() Config {
 			BuildForbiddenReauthCodes:              []string{"permission-denied"},
 			ExcludeBuildBotFlaggedFromScheduling:   false,
 			ExcludeConsoleBotFlaggedFromScheduling: false,
+			ConsoleDailyResetSchedulingEnabled:     false,
 			AutoCleanReauthEnabled:                 false,
 			AutoCleanReauthInterval:                Duration(10 * time.Minute),
 			AutoCleanReauthMinAge:                  Duration(time.Hour),

@@ -150,6 +150,7 @@ func (h *Handler) Register(router *gin.RouterGroup) {
 	router.POST("/accounts/web/:id/birth-date", h.setWebBirthDate)
 	router.POST("/accounts/web/:id/nsfw", h.enableWebNSFW)
 	router.POST("/accounts/console/refresh-quotas", h.refreshAllConsoleQuotas)
+	router.POST("/accounts/console/schedule-24h-resets", h.scheduleConsole24hResets)
 	router.POST("/accounts/refresh-billing", h.refreshAllBilling)
 	router.POST("/accounts/reset-quota", h.resetAllBuildQuota)
 	router.POST("/accounts/refresh-tokens", h.refreshAllTokens)
@@ -1476,6 +1477,16 @@ func (h *Handler) refreshAllConsoleQuotas(c *gin.Context) {
 		return
 	}
 	_ = stream.Write("complete", accountBatchResponse{Succeeded: succeeded, Failed: failed})
+}
+
+// scheduleConsole24hResets 立即将全部 Console 账号的额度刷新随机排布在未来 24h 内。
+func (h *Handler) scheduleConsole24hResets(c *gin.Context) {
+	scheduled, err := h.service.ScheduleConsoleResets(c.Request.Context(), time.Now().UTC())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "consoleScheduleFailed", "排班失败: "+err.Error())
+		return
+	}
+	response.Success(c, http.StatusOK, gin.H{"scheduled": scheduled})
 }
 
 func newAccountResponse(value accountapp.View) accountResponse {

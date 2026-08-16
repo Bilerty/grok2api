@@ -145,6 +145,9 @@ type AccountsConfig struct {
 	// （console_bot_flag_source∈{1,2}）账号不参与调度。风控标记会传播到链接的
 	// Web/Build 同账号，因此开关影响三渠道选号；与 Build 侧开关相互独立。
 	ExcludeConsoleBotFlaggedFromScheduling bool
+	// ConsoleDailyResetSchedulingEnabled 为 true 时，每日 UTC 0:00 将全部 Console
+	// 账号的额度刷新（含风控探测）随机排布在未来 24h 内，避免集中刷新。
+	ConsoleDailyResetSchedulingEnabled bool
 	// AutoCleanReauthEnabled 为 true 时，周期性删除已标记 reauthRequired 且超过 minAge 的账号。
 	AutoCleanReauthEnabled bool
 	// AutoCleanReauthInterval 自动清理扫描间隔。
