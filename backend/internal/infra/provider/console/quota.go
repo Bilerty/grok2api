@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
@@ -30,6 +31,8 @@ const (
 var (
 	botFlagSourceJSONPattern = regexp.MustCompile(`"botFlagSource"\s*:\s*(-?\d+)`)
 	botFlagSourceNullPattern = regexp.MustCompile(`"botFlagSource"\s*:\s*null`)
+	lastAbsentLogMu          sync.Mutex
+	lastAbsentLogAt          time.Time
 )
 
 func (a *Adapter) SyncQuota(ctx context.Context, credential account.Credential) (provider.QuotaSnapshot, error) {
@@ -178,12 +181,12 @@ func parseConsoleUsageRisk(data []byte) int {
 		switch value := raw.(type) {
 		case float64:
 			if value == 1 || value == 2 {
-				slog.Debug("console_usage_bot_flag_detected", "field", key, "value", int(value))
+				slog.Info("console_usage_bot_flag_detected", "field", key, "value", int(value))
 				return int(value)
 			}
 		case string:
 			if value == "1" || value == "2" {
-				slog.Debug("console_usage_bot_flag_detected", "field", key, "value", value)
+				slog.Info("console_usage_bot_flag_detected", "field", key, "value", value)
 				n := 0
 				_, _ = fmt.Sscanf(value, "%d", &n)
 				if n == 1 || n == 2 {
@@ -197,7 +200,16 @@ func parseConsoleUsageRisk(data []byte) int {
 		for key := range payload {
 			keys = append(keys, key)
 		}
-		slog.Debug("console_usage_risk_fields_absent", "top_level_keys", strings.Join(keys, ","))
+		// 挂点 A 未命中属正常路径；按 10 分钟节流打 Info，便于确认检测链路生效。
+		lastAbsentLogMu.Lock()
+		due := time.Since(lastAbsentLogAt) >= 10*time.Minute
+		if due {
+			lastAbsentLogAt = time.Now()
+		}
+		lastAbsentLogMu.Unlock()
+		if due {
+			slog.Info("console_usage_risk_fields_absent", "top_level_keys", strings.Join(keys, ","))
+		}
 	}
 	return 0
 }
@@ -259,7 +271,7 @@ func parseBotFlagSourceFromBody(body []byte) int {
 	if source != 1 && source != 2 {
 		return 0
 	}
-	slog.Debug("console_bot_flag_detected_from_grok_home", "botFlagSource", source)
+	slog.Info("console_bot_flag_detected_from_grok_home", "botFlagSource", source)
 	return source
 }
 
