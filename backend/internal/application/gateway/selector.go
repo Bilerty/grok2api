@@ -280,6 +280,7 @@ type Selector struct {
 	capacityWait           time.Duration
 	preferFreeBuild        bool
 	excludeBuildBotFlagged bool
+	excludeConsoleBotFlagged bool
 	segmentedConfig        segmentedSelectorConfig
 	segmentedState         segmentedSelectorState
 	configMu               sync.RWMutex
@@ -374,6 +375,27 @@ func (s *Selector) UpdateExcludeBuildBotFlaggedFromScheduling(value bool) {
 	}
 }
 
+// UpdateExcludeConsoleBotFlaggedFromScheduling toggles Console bot-risk exclusion
+// from scheduling. Console 检测到的风控已传播到三渠道账号，
+// 因此开关变化时需失效全部 provider 的候选缓存。
+func (s *Selector) UpdateExcludeConsoleBotFlaggedFromScheduling(value bool) {
+	s.configMu.Lock()
+	changed := s.excludeConsoleBotFlagged != value
+	s.excludeConsoleBotFlagged = value
+	s.configMu.Unlock()
+	if changed {
+		s.invalidateAllCandidateCaches()
+	}
+}
+
+func (s *Selector) invalidateAllCandidateCaches() {
+	s.candidateMu.Lock()
+	defer s.candidateMu.Unlock()
+	for key := range s.candidates {
+		delete(s.candidates, key)
+	}
+}
+
 func (s *Selector) preferFreeBuildEnabled() bool {
 	s.configMu.RLock()
 	defer s.configMu.RUnlock()
@@ -384,6 +406,12 @@ func (s *Selector) excludeBuildBotFlaggedEnabled() bool {
 	s.configMu.RLock()
 	defer s.configMu.RUnlock()
 	return s.excludeBuildBotFlagged
+}
+
+func (s *Selector) excludeConsoleBotFlaggedEnabled() bool {
+	s.configMu.RLock()
+	defer s.configMu.RUnlock()
+	return s.excludeConsoleBotFlagged
 }
 
 func (s *Selector) invalidateProviderCandidateCache(provider account.Provider) {
@@ -412,6 +440,25 @@ func (s *Selector) applyBuildBotFlaggedFilter(_ context.Context, provider accoun
 	filtered := make([]account.RoutingCandidate, 0, len(values))
 	for _, candidate := range values {
 		if source := candidate.Credential.BuildBotFlagSource; source == 1 || source == 2 {
+			continue
+		}
+		filtered = append(filtered, candidate)
+	}
+	return filtered, nil
+}
+
+// applyConsoleBotFlaggedFilter 对三渠道（build/web/console）生效：
+// Console 风控已传播到链接账号，任一渠道命中 console_bot_flag_source∈{1,2} 即移出调度。
+func (s *Selector) applyConsoleBotFlaggedFilter(_ context.Context, provider account.Provider, values []account.RoutingCandidate) ([]account.RoutingCandidate, error) {
+	if len(values) == 0 || !s.excludeConsoleBotFlaggedEnabled() {
+		return values, nil
+	}
+	if provider != account.ProviderBuild && provider != account.ProviderWeb && provider != account.ProviderConsole {
+		return values, nil
+	}
+	filtered := make([]account.RoutingCandidate, 0, len(values))
+	for _, candidate := range values {
+		if source := candidate.Credential.ConsoleBotFlagSource; source == 1 || source == 2 {
 			continue
 		}
 		filtered = append(filtered, candidate)
@@ -1186,6 +1233,10 @@ func (s *Selector) loadCombinedCandidates(ctx context.Context, provider account.
 		if err != nil {
 			return nil, err
 		}
+		values, err = s.applyConsoleBotFlaggedFilter(ctx, provider, values)
+		if err != nil {
+			return nil, err
+		}
 		s.candidateMu.Lock()
 		s.storeCandidateSnapshotLocked(key, newCandidateSnapshot(values, checkTime.Add(candidateCacheTTL)), checkTime)
 		s.candidateMu.Unlock()
@@ -1237,6 +1288,10 @@ func (s *Selector) loadLayeredCandidates(ctx context.Context, provider account.P
 			if filterErr != nil {
 				return nil, filterErr
 			}
+			values, filterErr = s.applyConsoleBotFlaggedFilter(ctx, provider, values)
+			if filterErr != nil {
+				return nil, filterErr
+			}
 			s.candidateMu.Lock()
 			stable := baseVersion == s.routingBaseVersionLocked(provider) && overlayVersion == s.routingOverlayVersionLocked(provider)
 			if stable {
@@ -1254,7 +1309,11 @@ func (s *Selector) loadLayeredCandidates(ctx context.Context, provider account.P
 		if err != nil {
 			return nil, err
 		}
-		return s.applyBuildBotFlaggedFilter(ctx, provider, values)
+		values, err = s.applyBuildBotFlaggedFilter(ctx, provider, values)
+		if err != nil {
+			return nil, err
+		}
+		return s.applyConsoleBotFlaggedFilter(ctx, provider, values)
 	})
 	if err != nil {
 		return nil, err

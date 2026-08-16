@@ -281,6 +281,9 @@ type AccountsConfig struct {
 	// ExcludeBuildBotFlaggedFromScheduling removes Build accounts with bot_flag_source/bfs in {1,2}
 	// from scheduling only. Linked Web/Console accounts are unaffected.
 	ExcludeBuildBotFlaggedFromScheduling bool
+	// ExcludeConsoleBotFlaggedFromScheduling removes Console bot-risk accounts
+	// (console_bot_flag_source in {1,2}) and their linked Web/Build peers from scheduling.
+	ExcludeConsoleBotFlaggedFromScheduling bool `yaml:"excludeConsoleBotFlaggedFromScheduling"`
 	AutoCleanReauthEnabled               bool
 	AutoCleanReauthInterval              Duration
 	AutoCleanReauthMinAge                Duration
@@ -853,13 +856,14 @@ func defaultConfig() Config {
 		},
 		ClientKeyDefaults: ClientKeyDefaultsConfig{RPMLimit: clientkeydomain.DefaultRPMLimit, MaxConcurrent: clientkeydomain.DefaultMaxConcurrent},
 		Accounts: AccountsConfig{
-			MarkBuildForbiddenReauth:             false,
-			BuildForbiddenReauthCodes:            []string{"permission-denied"},
-			ExcludeBuildBotFlaggedFromScheduling: false,
-			AutoCleanReauthEnabled:               false,
-			AutoCleanReauthInterval:              Duration(10 * time.Minute),
-			AutoCleanReauthMinAge:                Duration(time.Hour),
-			AutoCleanIncludeDisabled:             false,
+			MarkBuildForbiddenReauth:               false,
+			BuildForbiddenReauthCodes:              []string{"permission-denied"},
+			ExcludeBuildBotFlaggedFromScheduling:   false,
+			ExcludeConsoleBotFlaggedFromScheduling: false,
+			AutoCleanReauthEnabled:                 false,
+			AutoCleanReauthInterval:                Duration(10 * time.Minute),
+			AutoCleanReauthMinAge:                  Duration(time.Hour),
+			AutoCleanIncludeDisabled:               false,
 		},
 	}
 }

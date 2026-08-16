@@ -128,13 +128,14 @@ type clientKeyDefaultsConfigDTO struct {
 }
 
 type accountsConfigDTO struct {
-	MarkBuildForbiddenReauth             *bool     `json:"markBuildForbiddenReauth,omitempty"`
-	BuildForbiddenReauthCodes            *[]string `json:"buildForbiddenReauthCodes,omitempty"`
-	ExcludeBuildBotFlaggedFromScheduling *bool     `json:"excludeBuildBotFlaggedFromScheduling,omitempty"`
-	AutoCleanReauthEnabled               bool      `json:"autoCleanReauthEnabled"`
-	AutoCleanReauthInterval              string    `json:"autoCleanReauthInterval"`
-	AutoCleanReauthMinAge                string    `json:"autoCleanReauthMinAge"`
-	AutoCleanIncludeDisabled             bool      `json:"autoCleanIncludeDisabled"`
+	MarkBuildForbiddenReauth               *bool     `json:"markBuildForbiddenReauth,omitempty"`
+	BuildForbiddenReauthCodes              *[]string `json:"buildForbiddenReauthCodes,omitempty"`
+	ExcludeBuildBotFlaggedFromScheduling   *bool     `json:"excludeBuildBotFlaggedFromScheduling,omitempty"`
+	ExcludeConsoleBotFlaggedFromScheduling *bool     `json:"excludeConsoleBotFlaggedFromScheduling,omitempty"`
+	AutoCleanReauthEnabled                 bool      `json:"autoCleanReauthEnabled"`
+	AutoCleanReauthInterval                string    `json:"autoCleanReauthInterval"`
+	AutoCleanReauthMinAge                  string    `json:"autoCleanReauthMinAge"`
+	AutoCleanIncludeDisabled               bool      `json:"autoCleanIncludeDisabled"`
 }
 
 type settingsResponse struct {
@@ -250,9 +251,11 @@ func (value settingsConfigDTO) toApplication() settingsapp.EditableConfig {
 			MarkBuildForbiddenReauth:                     boolValue(value.Accounts.MarkBuildForbiddenReauth),
 			BuildForbiddenReauthCodes:                    stringSliceValue(value.Accounts.BuildForbiddenReauthCodes),
 			ExcludeBuildBotFlaggedFromScheduling:         boolValue(value.Accounts.ExcludeBuildBotFlaggedFromScheduling),
+			ExcludeConsoleBotFlaggedFromScheduling:       boolValue(value.Accounts.ExcludeConsoleBotFlaggedFromScheduling),
 			MarkBuildForbiddenReauthProvided:             value.Accounts.MarkBuildForbiddenReauth != nil,
 			BuildForbiddenReauthCodesProvided:            value.Accounts.BuildForbiddenReauthCodes != nil,
 			ExcludeBuildBotFlaggedFromSchedulingProvided: value.Accounts.ExcludeBuildBotFlaggedFromScheduling != nil,
+			ExcludeConsoleBotFlaggedFromSchedulingProvided: value.Accounts.ExcludeConsoleBotFlaggedFromScheduling != nil,
 			AutoCleanReauthEnabled:                       value.Accounts.AutoCleanReauthEnabled,
 			AutoCleanReauthInterval:                      value.Accounts.AutoCleanReauthInterval,
 			AutoCleanReauthMinAge:                        value.Accounts.AutoCleanReauthMinAge,
@@ -322,13 +325,14 @@ func newSettingsResponse(value settingsapp.Snapshot) settingsResponse {
 				RPMLimit: config.ClientKeyDefaults.RPMLimit, MaxConcurrent: config.ClientKeyDefaults.MaxConcurrent,
 			},
 			Accounts: &accountsConfigDTO{
-				MarkBuildForbiddenReauth:             boolPointer(config.Accounts.MarkBuildForbiddenReauth),
-				BuildForbiddenReauthCodes:            stringSlicePointer(config.Accounts.BuildForbiddenReauthCodes),
-				ExcludeBuildBotFlaggedFromScheduling: boolPointer(config.Accounts.ExcludeBuildBotFlaggedFromScheduling),
-				AutoCleanReauthEnabled:               config.Accounts.AutoCleanReauthEnabled,
-				AutoCleanReauthInterval:              config.Accounts.AutoCleanReauthInterval,
-				AutoCleanReauthMinAge:                config.Accounts.AutoCleanReauthMinAge,
-				AutoCleanIncludeDisabled:             config.Accounts.AutoCleanIncludeDisabled,
+				MarkBuildForbiddenReauth:               boolPointer(config.Accounts.MarkBuildForbiddenReauth),
+				BuildForbiddenReauthCodes:              stringSlicePointer(config.Accounts.BuildForbiddenReauthCodes),
+				ExcludeBuildBotFlaggedFromScheduling:   boolPointer(config.Accounts.ExcludeBuildBotFlaggedFromScheduling),
+				ExcludeConsoleBotFlaggedFromScheduling: boolPointer(config.Accounts.ExcludeConsoleBotFlaggedFromScheduling),
+				AutoCleanReauthEnabled:                 config.Accounts.AutoCleanReauthEnabled,
+				AutoCleanReauthInterval:                config.Accounts.AutoCleanReauthInterval,
+				AutoCleanReauthMinAge:                  config.Accounts.AutoCleanReauthMinAge,
+				AutoCleanIncludeDisabled:               config.Accounts.AutoCleanIncludeDisabled,
 			},
 		},
 		RecommendedProviderBuild: providerBuildRecommendationDTO{

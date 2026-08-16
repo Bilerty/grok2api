@@ -141,6 +141,10 @@ type AccountsConfig struct {
 	// ExcludeBuildBotFlaggedFromScheduling 为 true 时，bot_flag_source/bfs∈{1,2} 的 Build 账号不参与调度。
 	// 仅影响 ProviderBuild 选号；关联 Web/Console 账号调度不受影响。
 	ExcludeBuildBotFlaggedFromScheduling bool
+	// ExcludeConsoleBotFlaggedFromScheduling 为 true 时，Console 上游检测到的风控
+	// （console_bot_flag_source∈{1,2}）账号不参与调度。风控标记会传播到链接的
+	// Web/Build 同账号，因此开关影响三渠道选号；与 Build 侧开关相互独立。
+	ExcludeConsoleBotFlaggedFromScheduling bool
 	// AutoCleanReauthEnabled 为 true 时，周期性删除已标记 reauthRequired 且超过 minAge 的账号。
 	AutoCleanReauthEnabled bool
 	// AutoCleanReauthInterval 自动清理扫描间隔。

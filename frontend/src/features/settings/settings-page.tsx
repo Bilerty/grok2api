@@ -407,6 +407,25 @@ export function SettingsPage() {
                     )}
                   />
                 </SettingsField>
+                <SettingsField
+                  controlId="accounts-exclude-console-bot-flagged"
+                  label={t("settings.accounts.excludeConsoleBotFlaggedFromScheduling")}
+                  description={t("settings.accounts.excludeConsoleBotFlaggedFromSchedulingHelp")}
+                >
+                  <Controller
+                    control={form.control}
+                    name="accounts.excludeConsoleBotFlaggedFromScheduling"
+                    render={({ field }) => (
+                      <div className="flex h-9 items-center">
+                        <Switch
+                          id="accounts-exclude-console-bot-flagged"
+                          checked={Boolean(field.value)}
+                          onCheckedChange={field.onChange}
+                        />
+                      </div>
+                    )}
+                  />
+                </SettingsField>
               </div>
             </SettingsSection>
 

@@ -638,6 +638,33 @@ func (s *Service) UpdateExcludeBuildBotFlaggedFromScheduling(value bool) {
 	s.autoCleanMu.Unlock()
 }
 
+// ReportConsoleBotFlag 接收 Console 上游风控检测结果并三渠道传播落库：
+// Console 账号 + 其链接的 Web / Build 账号的 console_bot_flag_source 一起更新。
+// 检测失败或链接缺失不影响其余账号。
+func (s *Service) ReportConsoleBotFlag(ctx context.Context, credential accountdomain.Credential, source int) {
+	if credential.ID == 0 {
+		return
+	}
+	if source != 1 && source != 2 {
+		source = 0
+	}
+	targets := []uint64{credential.ID}
+	webID, buildID, err := s.accounts.ListConsoleLinkedAccountIDs(ctx, credential.ID)
+	if err == nil {
+		if webID != 0 {
+			targets = append(targets, webID)
+		}
+		if buildID != 0 {
+			targets = append(targets, buildID)
+		}
+	}
+	for _, id := range targets {
+		if updateErr := s.accounts.UpdateConsoleBotFlagForAccount(ctx, id, source); updateErr != nil {
+			s.logger.Warn("console_bot_flag_update_failed", "account_id", id, "source", source, "error", updateErr)
+		}
+	}
+}
+
 func (s *Service) excludeBuildBotFlaggedFromSchedulingEnabled() bool {
 	s.autoCleanMu.RLock()
 	defer s.autoCleanMu.RUnlock()

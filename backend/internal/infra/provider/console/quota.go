@@ -4,18 +4,32 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/chenyme/grok2api/backend/internal/domain/account"
 	egressdomain "github.com/chenyme/grok2api/backend/internal/domain/egress"
+	infraegress "github.com/chenyme/grok2api/backend/internal/infra/egress"
 	"github.com/chenyme/grok2api/backend/internal/infra/provider"
 )
 
 const (
 	consoleQuotaTimeout                = 30 * time.Second
 	consolePredictedChatRecoveryWindow = 24 * time.Hour
+	consoleBotFlagDetectTimeout        = 10 * time.Second
+	consoleBotFlagHomeURL              = "https://grok.com/"
+	consoleBotFlagBodyLimit            = 2 << 20
+)
+
+// botFlagSourcePatterns 复用 GrokIQ 的 SSO 拆解口径：从 grok.com 响应
+// （RSC JSON / HTML 内嵌 JSON）中提取 botFlagSource。
+var (
+	botFlagSourceJSONPattern = regexp.MustCompile(`"botFlagSource"\s*:\s*(-?\d+)`)
+	botFlagSourceNullPattern = regexp.MustCompile(`"botFlagSource"\s*:\s*null`)
 )
 
 func (a *Adapter) SyncQuota(ctx context.Context, credential account.Credential) (provider.QuotaSnapshot, error) {
@@ -136,7 +150,129 @@ func (a *Adapter) syncConsoleQuotas(ctx context.Context, credential account.Cred
 			windows = append(windows, window)
 		}
 	}
+	// 风控联动检测：挂点 A 优先解析 /usage 响应自带的字段；
+	// 无风控字段时回退挂点 B（复用本次 SSO 会话 + egress 出口打 grok.com 拆解）。
+	if source := parseConsoleUsageRisk(data); source != 0 {
+		a.reportBotFlag(context.WithoutCancel(ctx), credential, source, "usage")
+	} else if detected := a.detectConsoleBotFlag(context.WithoutCancel(ctx), credential, ssoToken, lease); detected != 0 {
+		a.reportBotFlag(context.WithoutCancel(ctx), credential, detected, "grok-home")
+	}
 	return windows, now, nil
+}
+
+// parseConsoleUsageRisk 挂点 A：从 /usage 响应体解析风控字段。
+// 返回 1/2 表示风控；0 表示响应未携带风控字段。
+func parseConsoleUsageRisk(data []byte) int {
+	if len(data) == 0 {
+		return 0
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return 0
+	}
+	for _, key := range []string{"botFlagSource", "bot_flag_source", "bfs", "botFlag", "risk"} {
+		raw, ok := payload[key]
+		if !ok || raw == nil {
+			continue
+		}
+		switch value := raw.(type) {
+		case float64:
+			if value == 1 || value == 2 {
+				slog.Debug("console_usage_bot_flag_detected", "field", key, "value", int(value))
+				return int(value)
+			}
+		case string:
+			if value == "1" || value == "2" {
+				slog.Debug("console_usage_bot_flag_detected", "field", key, "value", value)
+				n := 0
+				_, _ = fmt.Sscanf(value, "%d", &n)
+				if n == 1 || n == 2 {
+					return n
+				}
+			}
+		}
+	}
+	if len(payload) > 0 {
+		keys := make([]string, 0, len(payload))
+		for key := range payload {
+			keys = append(keys, key)
+		}
+		slog.Debug("console_usage_risk_fields_absent", "top_level_keys", strings.Join(keys, ","))
+	}
+	return 0
+}
+
+// detectConsoleBotFlag 挂点 B：复用本次 SSO 会话与 egress 出口，
+// 访问 grok.com 首页并按 GrokIQ 口径拆解 botFlagSource（1/2 为风控）。
+func (a *Adapter) detectConsoleBotFlag(ctx context.Context, credential account.Credential, ssoToken string, lease *infraegress.Lease) int {
+	if ssoToken == "" || lease == nil {
+		return 0
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, consoleBotFlagDetectTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(requestCtx, http.MethodGet, consoleBotFlagHomeURL, nil)
+	if err != nil {
+		return 0
+	}
+	request.Header.Set("Cookie", infraegress.BuildSSOCookie(ssoToken, ""))
+	request.Header.Set("Accept", "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8")
+	request.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	response, err := lease.Do(request)
+	if err != nil {
+		slog.Debug("console_bot_flag_detect_request_failed", "account_id", credential.ID, "error", err)
+		return 0
+	}
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, consoleBotFlagBodyLimit+1))
+	_ = response.Body.Close()
+	if readErr != nil || len(body) > consoleBotFlagBodyLimit {
+		slog.Debug("console_bot_flag_detect_body_read_failed", "account_id", credential.ID, "error", readErr)
+		return 0
+	}
+	if response.StatusCode != http.StatusOK {
+		slog.Debug("console_bot_flag_detect_http_status", "account_id", credential.ID, "status", response.StatusCode)
+		return 0
+	}
+	return parseBotFlagSourceFromBody(body)
+}
+
+// parseBotFlagSourceFromBody 从 grok.com 响应中提取 botFlagSource（GrokIQ 同款正则）。
+func parseBotFlagSourceFromBody(body []byte) int {
+	normalized := strings.Map(func(r rune) rune {
+		switch r {
+		case ' ', '\n', '\r', '\t':
+			return -1
+		default:
+			return r
+		}
+	}, string(body))
+	if botFlagSourceNullPattern.MatchString(normalized) {
+		return 0
+	}
+	match := botFlagSourceJSONPattern.FindStringSubmatch(normalized)
+	if len(match) < 2 {
+		return 0
+	}
+	var source int
+	if _, err := fmt.Sscanf(match[1], "%d", &source); err != nil {
+		return 0
+	}
+	if source != 1 && source != 2 {
+		return 0
+	}
+	slog.Debug("console_bot_flag_detected_from_grok_home", "botFlagSource", source)
+	return source
+}
+
+// reportBotFlag 将检测结果上报给账号服务（落库 + 三渠道传播），失败不影响额度同步。
+func (a *Adapter) reportBotFlag(ctx context.Context, credential account.Credential, source int, origin string) {
+	a.mu.RLock()
+	reporter := a.botFlagReporter
+	a.mu.RUnlock()
+	if reporter == nil {
+		slog.Debug("console_bot_flag_reporter_unset", "origin", origin)
+		return
+	}
+	reporter(ctx, credential, source)
 }
 
 func isConsoleQuotaMode(mode string) bool {

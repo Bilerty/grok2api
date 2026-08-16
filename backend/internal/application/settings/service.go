@@ -137,16 +137,20 @@ type AccountsConfig struct {
 	BuildForbiddenReauthCodes []string
 	// ExcludeBuildBotFlaggedFromScheduling drops bot-risk Build accounts from scheduling only.
 	ExcludeBuildBotFlaggedFromScheduling bool
-	AutoCleanReauthEnabled               bool
-	AutoCleanReauthInterval              string
-	AutoCleanReauthMinAge                string
-	AutoCleanIncludeDisabled             bool
+	// ExcludeConsoleBotFlaggedFromScheduling drops Console bot-risk accounts (and linked peers) from scheduling.
+	ExcludeConsoleBotFlaggedFromScheduling bool
+	AutoCleanReauthEnabled                 bool
+	AutoCleanReauthInterval                string
+	AutoCleanReauthMinAge                  string
+	AutoCleanIncludeDisabled               bool
 	// MarkBuildForbiddenReauthProvided preserves the value when an older management client omits the field.
 	MarkBuildForbiddenReauthProvided bool
 	// BuildForbiddenReauthCodesProvided preserves the configured codes when an older management client omits the field.
 	BuildForbiddenReauthCodesProvided bool
 	// ExcludeBuildBotFlaggedFromSchedulingProvided preserves the value when an older management client omits the field.
 	ExcludeBuildBotFlaggedFromSchedulingProvided bool
+	// ExcludeConsoleBotFlaggedFromSchedulingProvided preserves the value when an older management client omits the field.
+	ExcludeConsoleBotFlaggedFromSchedulingProvided bool
 }
 
 // EditableConfig 聚合管理端允许修改的运行参数。
@@ -426,6 +430,7 @@ func applyDomainConfig(base config.Config, value settingsdomain.Config) config.C
 		base.Accounts.BuildForbiddenReauthCodes = append([]string(nil), value.Accounts.BuildForbiddenReauthCodes...)
 	}
 	base.Accounts.ExcludeBuildBotFlaggedFromScheduling = value.Accounts.ExcludeBuildBotFlaggedFromScheduling
+	base.Accounts.ExcludeConsoleBotFlaggedFromScheduling = value.Accounts.ExcludeConsoleBotFlaggedFromScheduling
 	return base
 }
 
@@ -487,13 +492,14 @@ func toDomainConfig(value config.Config) settingsdomain.Config {
 			RPMLimit: value.ClientKeyDefaults.RPMLimit, MaxConcurrent: value.ClientKeyDefaults.MaxConcurrent,
 		},
 		Accounts: settingsdomain.AccountsConfig{
-			MarkBuildForbiddenReauth:             value.Accounts.MarkBuildForbiddenReauth,
-			BuildForbiddenReauthCodes:            append([]string(nil), value.Accounts.BuildForbiddenReauthCodes...),
-			ExcludeBuildBotFlaggedFromScheduling: value.Accounts.ExcludeBuildBotFlaggedFromScheduling,
-			AutoCleanReauthEnabled:               value.Accounts.AutoCleanReauthEnabled,
-			AutoCleanReauthInterval:              value.Accounts.AutoCleanReauthInterval.Value(),
-			AutoCleanReauthMinAge:                value.Accounts.AutoCleanReauthMinAge.Value(),
-			AutoCleanIncludeDisabled:             value.Accounts.AutoCleanIncludeDisabled,
+			MarkBuildForbiddenReauth:               value.Accounts.MarkBuildForbiddenReauth,
+			BuildForbiddenReauthCodes:              append([]string(nil), value.Accounts.BuildForbiddenReauthCodes...),
+			ExcludeBuildBotFlaggedFromScheduling:   value.Accounts.ExcludeBuildBotFlaggedFromScheduling,
+			ExcludeConsoleBotFlaggedFromScheduling: value.Accounts.ExcludeConsoleBotFlaggedFromScheduling,
+			AutoCleanReauthEnabled:                 value.Accounts.AutoCleanReauthEnabled,
+			AutoCleanReauthInterval:                value.Accounts.AutoCleanReauthInterval.Value(),
+			AutoCleanReauthMinAge:                  value.Accounts.AutoCleanReauthMinAge.Value(),
+			AutoCleanIncludeDisabled:               value.Accounts.AutoCleanIncludeDisabled,
 		},
 	}
 }
@@ -585,6 +591,9 @@ func mergeEditable(current config.Config, input EditableConfig) (config.Config, 
 		}
 		if input.Accounts.ExcludeBuildBotFlaggedFromSchedulingProvided {
 			next.Accounts.ExcludeBuildBotFlaggedFromScheduling = input.Accounts.ExcludeBuildBotFlaggedFromScheduling
+		}
+		if input.Accounts.ExcludeConsoleBotFlaggedFromSchedulingProvided {
+			next.Accounts.ExcludeConsoleBotFlaggedFromScheduling = input.Accounts.ExcludeConsoleBotFlaggedFromScheduling
 		}
 		next.Accounts.AutoCleanReauthEnabled = input.Accounts.AutoCleanReauthEnabled
 		next.Accounts.AutoCleanIncludeDisabled = input.Accounts.AutoCleanIncludeDisabled

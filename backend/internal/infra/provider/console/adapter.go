@@ -31,17 +31,25 @@ type Config struct {
 }
 
 type Adapter struct {
-	mu     sync.RWMutex
-	cfg    Config
-	egress *infraegress.Manager
-	cipher *security.Cipher
-	assets provider.ImageAssetStore
-	dpop   *dpopSessionManager
+	mu              sync.RWMutex
+	cfg             Config
+	egress          *infraegress.Manager
+	cipher          *security.Cipher
+	assets          provider.ImageAssetStore
+	dpop            *dpopSessionManager
+	botFlagReporter func(context.Context, account.Credential, int)
 }
 
 func NewAdapter(cfg Config, egress *infraegress.Manager, cipher *security.Cipher, assets provider.ImageAssetStore) *Adapter {
 	cfg = normalizedConfig(cfg)
 	return &Adapter{cfg: cfg, egress: egress, cipher: cipher, assets: assets, dpop: newDPoPSessionManager()}
+}
+
+// SetBotFlagReporter 注入 Console 风控标记上报回调（由账号服务落库并传播三渠道）。
+func (a *Adapter) SetBotFlagReporter(fn func(context.Context, account.Credential, int)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.botFlagReporter = fn
 }
 
 func normalizedConfig(cfg Config) Config {

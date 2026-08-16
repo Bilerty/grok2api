@@ -305,6 +305,46 @@ func (r *AccountRepository) UpdateBuildBotFlagSources(ctx context.Context, value
 	return err
 }
 
+// UpdateConsoleBotFlagForAccount 幂等写入 Console 风控标记（三渠道联动的落库入口）。
+func (r *AccountRepository) UpdateConsoleBotFlagForAccount(ctx context.Context, id uint64, source int) error {
+	source = normalizeConsoleBotFlagSource(source)
+	result := r.db.db.WithContext(ctx).Model(&accountCredentialModel{}).
+		Where("account_id = ?", id).
+		Updates(map[string]any{"console_bot_flag_source": source, "updated_at": time.Now().UTC()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountCredentialChanged})
+	}
+	return nil
+}
+
+// ListConsoleLinkedAccountIDs 经两跳链接表解析 Console 账号的 Web/Build 伙伴。
+func (r *AccountRepository) ListConsoleLinkedAccountIDs(ctx context.Context, consoleID uint64) (uint64, uint64, error) {
+	var webID, buildID uint64
+	err := r.db.db.WithContext(ctx).Table("web_console_account_links AS link").
+		Select("link.web_account_id").
+		Where("link.console_account_id = ?", consoleID).
+		Limit(1).
+		Scan(&webID).Error
+	if err != nil {
+		return 0, 0, err
+	}
+	if webID == 0 {
+		return 0, 0, nil
+	}
+	err = r.db.db.WithContext(ctx).Table("account_provider_links AS link").
+		Select("link.build_account_id").
+		Where("link.web_account_id = ?", webID).
+		Limit(1).
+		Scan(&buildID).Error
+	if err != nil {
+		return webID, 0, err
+	}
+	return webID, buildID, nil
+}
+
 func (r *AccountRepository) Summarize(ctx context.Context, now time.Time) ([]repository.AccountSummary, error) {
 	var rows []repository.AccountSummary
 	selectFields := `

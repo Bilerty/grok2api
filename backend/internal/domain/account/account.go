@@ -199,8 +199,12 @@ type Credential struct {
 	// BuildBotFlagSource 是从 Build access token 提取并持久化的非敏感路由元数据。
 	// 仅精确值 1、2 表示风控；0 表示未标记或非 Build 账号。
 	BuildBotFlagSource int
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	// ConsoleBotFlagSource 是从 Console 上游检测并持久化的风控元数据。
+	// 三渠道联动：Console 账号检测到风控后，会同时写入其链接的 Web/Build 账号。
+	// 仅精确值 1、2 表示风控；0 表示未标记。
+	ConsoleBotFlagSource int
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // CredentialMaterial contains the encrypted provider secrets and refresh
