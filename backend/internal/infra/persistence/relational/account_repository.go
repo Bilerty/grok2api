@@ -40,6 +40,7 @@ type quotaBreakdownJSON struct {
 
 const (
 	accountUpdateBatchSize      = 500
+	consoleBotCheckedAtRefreshInterval = 10 * time.Minute
 	accountPaidPlanSignal       = `(LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(billing.plan_code), ' ', ''), '_', ''), '-', ''), '+', 'plus')) IN ('super', 'supergrok', 'supergrokpro', 'supergrokheavy', 'supergroklite', 'grokpro', 'xpremium', 'xpremiumplus', 'apikey') OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(billing.plan_name), ' ', ''), '_', ''), '-', ''), '+', 'plus')) IN ('super', 'supergrok', 'supergrokpro', 'supergrokheavy', 'supergroklite', 'grokpro', 'xpremium', 'xpremiumplus', 'apikey'))`
 	accountFreePlanSignal       = `(LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(billing.plan_code), ' ', ''), '_', ''), '-', ''), '+', 'plus')) IN ('free', 'grokfree', 'freetier', 'basic', 'grokbasic', 'xbasic') OR LOWER(REPLACE(REPLACE(REPLACE(REPLACE(TRIM(billing.plan_name), ' ', ''), '_', ''), '-', ''), '+', 'plus')) IN ('free', 'grokfree', 'freetier', 'basic', 'grokbasic', 'xbasic'))`
 	accountPaidBillingSignals   = `(` + accountPaidPlanSignal + ` OR billing.monthly_limit > 0 OR billing.on_demand_cap > 0 OR billing.on_demand_used > 0 OR billing.prepaid_balance > 0)`
@@ -305,19 +306,42 @@ func (r *AccountRepository) UpdateBuildBotFlagSources(ctx context.Context, value
 	return err
 }
 
-// UpdateConsoleBotFlagForAccount 幂等写入 Console 风控标记（三渠道联动的落库入口）。
-func (r *AccountRepository) UpdateConsoleBotFlagForAccount(ctx context.Context, id uint64, source int) error {
+// UpdateConsoleBotFlagForAccount 幂等写入 Console 风控标记与最近探测时间（三渠道联动的落库入口）。
+// source 未变且距上次探测不足 10 分钟时跳过写库，避免高频探测打爆路由缓存与 SQLite。
+func (r *AccountRepository) UpdateConsoleBotFlagForAccount(ctx context.Context, id uint64, source int, checkedAt time.Time) (bool, error) {
 	source = normalizeConsoleBotFlagSource(source)
+	var row accountCredentialModel
+	err := r.db.db.WithContext(ctx).
+		Select("console_bot_flag_source", "console_bot_checked_at").
+		Where("account_id = ?", id).
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	sourceChanged := row.ConsoleBotFlagSource != source
+	if !sourceChanged && row.ConsoleBotCheckedAt != nil && checkedAt.Sub(*row.ConsoleBotCheckedAt) < consoleBotCheckedAtRefreshInterval {
+		return false, nil
+	}
 	result := r.db.db.WithContext(ctx).Model(&accountCredentialModel{}).
 		Where("account_id = ?", id).
-		Updates(map[string]any{"console_bot_flag_source": source, "updated_at": time.Now().UTC()})
+		Updates(map[string]any{
+			"console_bot_flag_source": source,
+			"console_bot_checked_at":  checkedAt,
+			"updated_at":              time.Now().UTC(),
+		})
 	if result.Error != nil {
-		return result.Error
+		return false, result.Error
 	}
-	if result.RowsAffected > 0 {
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+	if sourceChanged {
 		r.notifyInvalidation(ctx, repository.InvalidationEvent{Kind: repository.InvalidationAccountCredentialChanged})
 	}
-	return nil
+	return sourceChanged, nil
 }
 
 // ListConsoleLinkedAccountIDs 经两跳链接表解析 Console 账号的 Web/Build 伙伴。

@@ -84,6 +84,7 @@ type accountCredentialModel struct {
 	RefreshPermanent          bool          `gorm:"not null;default:false"`
 	BuildBotFlagSource        int           `gorm:"not null;default:0;check:chk_account_credentials_build_bot_flag_source,build_bot_flag_source IN (0,1,2)"`
 	ConsoleBotFlagSource      int           `gorm:"not null;default:0"`
+	ConsoleBotCheckedAt       *time.Time
 	UpdatedAt                 time.Time     `gorm:"not null"`
 	Account                   *accountModel `gorm:"foreignKey:AccountID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE"`
 }

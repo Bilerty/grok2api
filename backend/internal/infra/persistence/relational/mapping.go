@@ -91,6 +91,7 @@ func toAccountDomain(value accountModel) account.Credential {
 		BuildSuperEntitled: value.BuildSuperEntitled && account.Provider(value.Provider) == account.ProviderBuild,
 		BuildBotFlagSource: normalizedBuildBotFlagSource(account.Provider(value.Provider), value.Credential),
 		ConsoleBotFlagSource: normalizedConsoleBotFlagSource(value.Credential),
+		ConsoleBotCheckedAt:  credentialConsoleBotCheckedAt(value.Credential),
 		CreatedAt:            value.CreatedAt, UpdatedAt: value.UpdatedAt,
 	}
 }
@@ -173,6 +174,7 @@ func fromAccountCredentialDomain(value account.Credential) accountCredentialMode
 		RefreshFailures: value.RefreshFailureCount, LastRefreshErrorStatus: value.LastRefreshErrorStatus, LastRefreshError: value.LastRefreshErrorCode, LastRefreshErrorMessage: value.LastRefreshErrorMessage, LastRefreshErrorResponse: value.LastRefreshErrorResponse, RefreshPermanent: value.RefreshPermanent,
 		BuildBotFlagSource: normalizeBuildBotFlagSource(value.Provider, value.BuildBotFlagSource),
 		ConsoleBotFlagSource: normalizeConsoleBotFlagSource(value.ConsoleBotFlagSource),
+		ConsoleBotCheckedAt:  value.ConsoleBotCheckedAt,
 		UpdatedAt:            time.Now().UTC(),
 	}
 }
@@ -205,6 +207,13 @@ func normalizeConsoleBotFlagSource(source int) int {
 		return source
 	}
 	return 0
+}
+
+func credentialConsoleBotCheckedAt(credential *accountCredentialModel) *time.Time {
+	if credential == nil {
+		return nil
+	}
+	return credential.ConsoleBotCheckedAt
 }
 
 func fromWebProfileDomain(value account.Credential) *webAccountProfileModel {

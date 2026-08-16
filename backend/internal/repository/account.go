@@ -141,8 +141,10 @@ type AccountRepository interface {
 	// DeleteAutoCleanReauthCandidates 在事务内重新校验状态与年龄并跳过活动视频任务，返回实际删除 ID。
 	DeleteAutoCleanReauthCandidates(ctx context.Context, markedBefore time.Time, includeDisabled bool, candidateIDs []uint64) ([]uint64, error)
 	UpdateTokens(ctx context.Context, id uint64, accessToken, refreshToken string, expiresAt time.Time, buildBotFlagSource int) (account.Credential, error)
-	// UpdateConsoleBotFlagForAccount 幂等写入账号的 Console 风控标记（0/1/2）。
-	UpdateConsoleBotFlagForAccount(ctx context.Context, id uint64, source int) error
+	// UpdateConsoleBotFlagForAccount 幂等写入账号的 Console 风控标记与最近探测时间。
+	// 返回 source 是否发生变化（调用方据此判断是否需要失效路由缓存）；
+	// source 未变且距上次探测不足 10 分钟时跳过写库。
+	UpdateConsoleBotFlagForAccount(ctx context.Context, id uint64, source int, checkedAt time.Time) (bool, error)
 	// ListConsoleLinkedAccountIDs 返回 Console 账号链接的 Web 与 Build 账号 ID
 	// （经 web_console_account_links 与 account_provider_links 两跳）。
 	ListConsoleLinkedAccountIDs(ctx context.Context, consoleID uint64) (webID uint64, buildID uint64, err error)

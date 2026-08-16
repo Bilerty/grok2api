@@ -321,6 +321,7 @@ type accountResponse struct {
 	BuildBotFlagSource         int                     `json:"buildBotFlagSource,omitempty"`
 	ConsoleBotFlagged          bool                    `json:"consoleBotFlagged"`
 	ConsoleBotFlagSource       int                     `json:"consoleBotFlagSource,omitempty"`
+	ConsoleBotCheckedAt        *time.Time              `json:"consoleBotCheckedAt,omitempty"`
 	EgressNodeID               uint64                  `json:"egressNodeId,omitempty,string"`
 	EgressAssignmentMode       string                  `json:"egressAssignmentMode,omitempty"`
 	ModelSyncFailed            bool                    `json:"modelSyncFailed,omitempty"`
@@ -1500,6 +1501,7 @@ func newAccountResponse(value accountapp.View) accountResponse {
 		BuildBotFlagSource:         buildBotFlagSourceResponse(c.Provider, value.BuildBotFlagged, value.BuildBotFlagSource),
 		ConsoleBotFlagged:          c.ConsoleBotFlagSource == 1 || c.ConsoleBotFlagSource == 2,
 		ConsoleBotFlagSource:       c.ConsoleBotFlagSource,
+		ConsoleBotCheckedAt:        c.ConsoleBotCheckedAt,
 		EgressNodeID:               c.EgressNodeID,
 		EgressAssignmentMode:       string(c.EgressAssignmentMode),
 		Quota:                      newQuotaResponse(value.Quota), QuotaWindows: make([]quotaWindowResponse, 0, len(value.QuotaWindows)),

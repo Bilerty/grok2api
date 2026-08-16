@@ -155,11 +155,14 @@ func (a *Adapter) syncConsoleQuotas(ctx context.Context, credential account.Cred
 	}
 	// 风控联动检测：挂点 A 优先解析 /usage 响应自带的字段；
 	// 无风控字段时回退挂点 B（复用本次 SSO 会话 + egress 出口打 grok.com 拆解）。
-	if source := parseConsoleUsageRisk(data); source != 0 {
-		a.reportBotFlag(context.WithoutCancel(ctx), credential, source, "usage")
-	} else if detected := a.detectConsoleBotFlag(context.WithoutCancel(ctx), credential, ssoToken, lease); detected != 0 {
-		a.reportBotFlag(context.WithoutCancel(ctx), credential, detected, "grok-home")
+	// 无论结果如何都上报（含安全结果 0），用于记录最近探测时间与状态。
+	source := parseConsoleUsageRisk(data)
+	origin := "usage"
+	if source == 0 {
+		source = a.detectConsoleBotFlag(context.WithoutCancel(ctx), credential, ssoToken, lease)
+		origin = "grok-home"
 	}
+	a.reportBotFlag(context.WithoutCancel(ctx), credential, source, origin)
 	return windows, now, nil
 }
 

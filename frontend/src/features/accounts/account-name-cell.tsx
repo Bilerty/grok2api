@@ -146,6 +146,35 @@ export function AccountNameCell({ account }: { account: AccountDTO }) {
             </Tooltip>
           </>
         ) : null}
+        {account.consoleBotCheckedAt ? (
+          <>
+            <span className="mx-2 h-3 w-px shrink-0 bg-border" aria-hidden="true" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  tabIndex={0}
+                  aria-label={t("accounts.consoleBotRisk")}
+                  className={
+                    account.consoleBotFlagSource === 2
+                      ? "inline-flex cursor-help text-rose-500 focus-visible:outline-none dark:text-rose-400"
+                      : account.consoleBotFlagSource === 1
+                        ? "inline-flex cursor-help text-amber-500 focus-visible:outline-none dark:text-amber-400"
+                        : "inline-flex cursor-help text-emerald-500 focus-visible:outline-none dark:text-emerald-400"
+                  }
+                >
+                  <Bot className="size-3.5" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {account.consoleBotFlagSource === 2
+                  ? t("accounts.consoleBotRiskTooltipSource2", { time: formatDateTime(account.consoleBotCheckedAt, i18n.language) })
+                  : account.consoleBotFlagSource === 1
+                    ? t("accounts.consoleBotRiskTooltipSource1", { time: formatDateTime(account.consoleBotCheckedAt, i18n.language) })
+                    : t("accounts.consoleBotRiskTooltipSafe", { time: formatDateTime(account.consoleBotCheckedAt, i18n.language) })}
+              </TooltipContent>
+            </Tooltip>
+          </>
+        ) : null}
       </div>
     </div>
   );

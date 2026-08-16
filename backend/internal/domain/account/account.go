@@ -203,8 +203,10 @@ type Credential struct {
 	// 三渠道联动：Console 账号检测到风控后，会同时写入其链接的 Web/Build 账号。
 	// 仅精确值 1、2 表示风控；0 表示未标记。
 	ConsoleBotFlagSource int
-	CreatedAt            time.Time
-	UpdatedAt            time.Time
+	// ConsoleBotCheckedAt 是最近一次 Console 风控探测时间（含安全结果 0）。
+	ConsoleBotCheckedAt *time.Time
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
 }
 
 // CredentialMaterial contains the encrypted provider secrets and refresh

@@ -638,9 +638,9 @@ func (s *Service) UpdateExcludeBuildBotFlaggedFromScheduling(value bool) {
 	s.autoCleanMu.Unlock()
 }
 
-// ReportConsoleBotFlag 接收 Console 上游风控检测结果并三渠道传播落库：
-// Console 账号 + 其链接的 Web / Build 账号的 console_bot_flag_source 一起更新。
-// 检测失败或链接缺失不影响其余账号。
+// ReportConsoleBotFlag 接收 Console 上游风控检测结果（含安全结果 0）并三渠道落库：
+// Console 账号 + 其链接的 Web / Build 账号的 console_bot_flag_source 与最近探测时间一起更新。
+// 检测失败或链接缺失不影响其余账号；source 变化时才失效路由缓存（仓储层内部处理）。
 func (s *Service) ReportConsoleBotFlag(ctx context.Context, credential accountdomain.Credential, source int) {
 	if credential.ID == 0 {
 		return
@@ -658,9 +658,15 @@ func (s *Service) ReportConsoleBotFlag(ctx context.Context, credential accountdo
 			targets = append(targets, buildID)
 		}
 	}
+	checkedAt := s.now().UTC()
 	for _, id := range targets {
-		if updateErr := s.accounts.UpdateConsoleBotFlagForAccount(ctx, id, source); updateErr != nil {
+		changed, updateErr := s.accounts.UpdateConsoleBotFlagForAccount(ctx, id, source, checkedAt)
+		if updateErr != nil {
 			s.logger.Warn("console_bot_flag_update_failed", "account_id", id, "source", source, "error", updateErr)
+			continue
+		}
+		if changed {
+			s.logger.Info("console_bot_flag_changed", "account_id", id, "source", source, "checked_at", checkedAt.Format(time.RFC3339))
 		}
 	}
 }
