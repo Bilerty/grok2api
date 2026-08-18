@@ -59,6 +59,7 @@ services:
   egress-quality-guard:
     container_name: grok2api-egress-quality-guard
     profiles: ["quality-guard"]
+    image: "${GROK2API_QUALITY_GUARD_IMAGE:-ghcr.io/bilerty/grok2api-egress-quality-guard:latest}"
     build:
       context: .
       dockerfile: tools/egress-quality-guard/Dockerfile
