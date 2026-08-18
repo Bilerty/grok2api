@@ -75,6 +75,8 @@ class Config:
     max_output_tokens: int
     fail_closed: bool
     min_generation_ms: int
+    active_probe_max_nodes: int
+    active_probe_node_delay_seconds: int
     rotation_url: str
     rotation_token: str
     rotation_timeout_seconds: int
@@ -127,6 +129,8 @@ class Config:
             max_output_tokens=int(values.get("max_output_tokens") or 0),
             fail_closed=bool(values.get("fail_closed")),
             min_generation_ms=int(values.get("min_generation_ms") or 0),
+            active_probe_max_nodes=int(values.get("active_probe_max_nodes") or 0),
+            active_probe_node_delay_seconds=int(values.get("active_probe_node_delay_seconds") or 0),
             rotation_url=str(values.get("rotation_url") or "").strip(),
             rotation_token=str(values.get("rotation_token") or ""),
             rotation_timeout_seconds=int(values.get("rotation_timeout_seconds") or 0),
@@ -169,6 +173,10 @@ class Config:
             raise ValueError("qualityGuard.minimumHealthyNodes must fit the configured node count")
         if self.min_generation_ms > self.request_timeout_seconds * 1000:
             raise ValueError("qualityGuard.minimumGenerationWindow must fit the request timeout")
+        if self.active_probe_max_nodes < 0:
+            raise ValueError("qualityGuard.activeProbeMaxNodesPerCycle must not be negative")
+        if self.active_probe_node_delay_seconds < 0 or self.active_probe_node_delay_seconds > 3600:
+            raise ValueError("qualityGuard.activeProbeNodeDelay must be between 0 and 3600 seconds")
         if self.rotation_url:
             rotation_url = urllib.parse.urlparse(self.rotation_url)
             if rotation_url.scheme not in {"http", "https"} or not rotation_url.netloc:
@@ -642,6 +650,8 @@ class Guard:
             "max_output_tokens": self.config.max_output_tokens,
             "fail_closed": self.config.fail_closed,
             "min_generation_ms": self.config.min_generation_ms,
+            "active_probe_max_nodes": self.config.active_probe_max_nodes,
+            "active_probe_node_delay_seconds": self.config.active_probe_node_delay_seconds,
             "rotatable_node_ids": list(self.config.rotatable_node_ids),
             "prompt": self.config.prompt,
             "expected": self.config.expected,
@@ -1059,7 +1069,15 @@ class Guard:
     def run_active_cycle(self) -> None:
         now = time.time()
         all_nodes, nodes, skip_ids = self._prepare_nodes(now)
-        for node in nodes:
+        max_nodes = self.config.active_probe_max_nodes
+        if max_nodes > 0 and len(nodes) > max_nodes:
+            offset = int(self.state.get("active_probe_offset", 0)) % len(nodes)
+            nodes = nodes[offset:] + nodes[:offset]
+            nodes = nodes[:max_nodes]
+            self.state["active_probe_offset"] = (offset + len(nodes)) % len(nodes)
+        for index, node in enumerate(nodes):
+            if index > 0 and self.config.active_probe_node_delay_seconds > 0:
+                time.sleep(self.config.active_probe_node_delay_seconds)
             node_id = str(node["id"])
             state = self._state_for(node_id)
             if node_id not in skip_ids and node.get("enabled") and not state.get("disabled_by_guard"):

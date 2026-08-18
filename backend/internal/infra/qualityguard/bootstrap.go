@@ -46,6 +46,8 @@ type bootstrapConfig struct {
 	MaxOutputTokens         int      `json:"max_output_tokens"`
 	FailClosed              bool     `json:"fail_closed"`
 	MinGenerationMS         int      `json:"min_generation_ms"`
+	ActiveProbeMaxNodes     int      `json:"active_probe_max_nodes"`
+	ActiveProbeNodeDelaySec int      `json:"active_probe_node_delay_seconds"`
 	RotationURL             string   `json:"rotation_url"`
 	RotationToken           string   `json:"rotation_token"`
 	RotationTimeoutSeconds  int      `json:"rotation_timeout_seconds"`
@@ -77,7 +79,8 @@ func Prepare(path string, value config.QualityGuardConfig, jwtSecret string) (st
 			SoftTPS: value.SoftTPS, HardTPS: value.HardTPS, ConsecutiveSoft: value.ConsecutiveSoft, ConsecutiveErrors: value.ConsecutiveErrors,
 			QuarantineSeconds: int(value.QuarantineDuration.Value().Seconds()), NoAccountBackoffSeconds: int(value.NoAccountBackoff.Value().Seconds()),
 			MinHealthyNodes: value.MinimumHealthyNodes, MaxOutputTokens: value.MaxOutputTokens, FailClosed: value.FailClosed,
-			MinGenerationMS: int(value.MinimumGenerationWindow.Value().Milliseconds()), RotationURL: strings.TrimSpace(value.RotationURL),
+			MinGenerationMS: int(value.MinimumGenerationWindow.Value().Milliseconds()), ActiveProbeMaxNodes: value.ActiveProbeMaxNodesPerCycle,
+			ActiveProbeNodeDelaySec: int(value.ActiveProbeNodeDelay.Value().Seconds()), RotationURL: strings.TrimSpace(value.RotationURL),
 			RotationToken: value.RotationToken, RotationTimeoutSeconds: int(value.RotationTimeout.Value().Seconds()),
 			RotatableNodeIDs: uint64Strings(value.RotatableNodeIDs),
 		},

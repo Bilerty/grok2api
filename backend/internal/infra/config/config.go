@@ -263,10 +263,15 @@ type QualityGuardConfig struct {
 	MaxOutputTokens         int      `yaml:"maxOutputTokens"`
 	FailClosed              bool     `yaml:"failClosed"`
 	MinimumGenerationWindow Duration `yaml:"minimumGenerationWindow"`
-	RotationURL             string   `yaml:"rotationURL"`
-	RotationToken           string   `yaml:"rotationToken"`
-	RotationTimeout         Duration `yaml:"rotationTimeout"`
-	RotatableNodeIDs        []uint64 `yaml:"rotatableNodeIDs"`
+	// ActiveProbeMaxNodesPerCycle limits how many nodes are actively probed in one cycle.
+	// 0 means no limit (probe all eligible nodes).
+	ActiveProbeMaxNodesPerCycle int `yaml:"activeProbeMaxNodesPerCycle"`
+	// ActiveProbeNodeDelay is the pause between active probes within one cycle.
+	ActiveProbeNodeDelay Duration `yaml:"activeProbeNodeDelay"`
+	RotationURL          string   `yaml:"rotationURL"`
+	RotationToken        string   `yaml:"rotationToken"`
+	RotationTimeout      Duration `yaml:"rotationTimeout"`
+	RotatableNodeIDs     []uint64 `yaml:"rotatableNodeIDs"`
 }
 
 type ClientKeyDefaultsConfig struct {
@@ -855,7 +860,8 @@ func defaultConfig() Config {
 			SoftTPS: 500, HardTPS: 1000, ConsecutiveSoft: 2, ConsecutiveErrors: 2,
 			QuarantineDuration: Duration(5 * time.Minute), NoAccountBackoff: Duration(5 * time.Minute),
 			MinimumHealthyNodes: 3, MaxOutputTokens: 384,
-			MinimumGenerationWindow: Duration(time.Second), RotationTimeout: Duration(45 * time.Second),
+			MinimumGenerationWindow: Duration(time.Second), ActiveProbeNodeDelay: Duration(0),
+			RotationTimeout: Duration(45 * time.Second),
 		},
 		ClientKeyDefaults: ClientKeyDefaultsConfig{RPMLimit: clientkeydomain.DefaultRPMLimit, MaxConcurrent: clientkeydomain.DefaultMaxConcurrent},
 		Accounts: AccountsConfig{

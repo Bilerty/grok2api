@@ -129,6 +129,12 @@ qualityGuard:
   maxOutputTokens: 384
   failClosed: false
   minimumGenerationWindow: 1s
+  # 每轮主动探测最多探测的节点数；0 表示不限制（探测全部合格节点）。
+  # 适合出口 IP 集中在同一子网、需要避免短时间流量突增的场景。
+  activeProbeMaxNodesPerCycle: 0
+  # 同一轮主动探测中，每个节点之间的间隔时长；0 表示不额外等待。
+  # 例如 10s 会让每轮探测在节点之间停顿 10 秒，进一步分散流量。
+  activeProbeNodeDelay: 0s
   # 可选的受信任换 IP Webhook；启用时同时填写 rotatableNodeIDs。
   rotationURL: ""
   rotationToken: ""
