@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -19,6 +20,19 @@ import (
 	mediadomain "github.com/chenyme/grok2api/backend/internal/domain/media"
 	"github.com/gin-gonic/gin"
 )
+
+type chunkErrorReader struct {
+	data []byte
+	done bool
+}
+
+func (r *chunkErrorReader) Read(target []byte) (int, error) {
+	if r.done {
+		return 0, io.EOF
+	}
+	r.done = true
+	return copy(target, r.data), errors.New("upstream cut")
+}
 
 func TestVideoGenerationUsesOfficialXAIEndpointsAndFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -216,6 +230,19 @@ func TestGatewayErrorMapsOversizedVideoInputToBadRequest(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
 	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), `"code":"invalid_request"`) || !strings.Contains(recorder.Body.String(), "32 MiB") {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestGatewayErrorMapsInvalidVideoParametersToBadRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.GET("/", func(c *gin.Context) {
+		writeGatewayError(c, fmt.Errorf("%w: Console reference_images 最多 7 张", gateway.ErrVideoParameterInvalid))
+	})
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), `"code":"invalid_request"`) || !strings.Contains(recorder.Body.String(), "最多 7 张") {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
@@ -822,14 +849,29 @@ func TestStreamInspectorMarksFirstGeneratedTokenOnce(t *testing.T) {
 			delta:   `data: {"type":"response.custom_tool_call_input.delta","output_index":1,"item_id":"ctc_1","delta":"{}"}` + "\n\n",
 		},
 		{
+			name: "responses encrypted reasoning item", protocol: streamProtocolResponses,
+			prelude: `data: {"type":"response.created","response":{"id":"resp_1"}}` + "\n\n",
+			delta:   `data: {"type":"response.output_item.added","item":{"id":"rs_1","type":"reasoning","status":"in_progress"}}` + "\n\n",
+		},
+		{
 			name: "chat reasoning", protocol: streamProtocolChat,
 			prelude: `data: {"choices":[{"delta":{"role":"assistant"}}]}` + "\n\n",
 			delta:   `data: {"choices":[{"delta":{"reasoning_content":"thinking"}}]}` + "\n\n",
 		},
 		{
+			name: "chat thinking_content", protocol: streamProtocolChat,
+			prelude: `data: {"choices":[{"delta":{"role":"assistant"}}]}` + "\n\n",
+			delta:   `data: {"choices":[{"delta":{"thinking_content":"thinking"}}]}` + "\n\n",
+		},
+		{
 			name: "anthropic tool input", protocol: streamProtocolAnthropic,
 			prelude: `data: {"type":"message_start","message":{"id":"msg_1"}}` + "\n\n",
 			delta:   `data: {"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\"q\":"}}` + "\n\n",
+		},
+		{
+			name: "anthropic thinking start", protocol: streamProtocolAnthropic,
+			prelude: `data: {"type":"message_start","message":{"id":"msg_1"}}` + "\n\n",
+			delta:   `data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}` + "\n\n",
 		},
 	}
 	for _, test := range tests {
@@ -861,6 +903,72 @@ func TestStreamInspectorDoesNotMarkImageEvents(t *testing.T) {
 	inspector.markFirstTokenForwarded()
 	if marked != 0 {
 		t.Fatalf("image stream marked first token %d times", marked)
+	}
+}
+
+func TestStreamInspectorMarksChatReasoningComment(t *testing.T) {
+	marked := 0
+	inspector := &responseInspector{protocol: streamProtocolChat, onFirstToken: func() { marked++ }}
+	inspector.Inspect([]byte(": grok2api-reasoning-start\n\n"))
+	if marked != 0 {
+		t.Fatalf("reasoning comment marked first token before forwarding %d times", marked)
+	}
+	inspector.markFirstTokenForwarded()
+	if marked != 1 {
+		t.Fatalf("reasoning comment marked first token %d times", marked)
+	}
+}
+
+func TestInternalSSEMarkerFilterAcrossChunkBoundaries(t *testing.T) {
+	marker := reasoningStartSSEComment + "\n\n"
+	input := []byte("data: before\n\n" + marker + "data: after\n\n")
+	want := "data: before\n\ndata: after\n\n"
+	for split := 0; split <= len(input); split++ {
+		filter := internalSSEMarkerFilter{enabled: true}
+		var output []byte
+		output = append(output, filter.Filter(input[:split], false)...)
+		output = append(output, filter.Filter(input[split:], false)...)
+		output = append(output, filter.Filter(nil, true)...)
+		if string(output) != want {
+			t.Fatalf("split %d output = %q, want %q", split, output, want)
+		}
+	}
+}
+
+func TestCopyStreamConsumesInternalReasoningMarker(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	body := `data: {"choices":[{"delta":{"role":"assistant"}}]}` + "\n\n" +
+		": grok2api-reasoning-start\n\n" +
+		`data: {"choices":[{"delta":{"content":"hello"}}]}` + "\n\n" +
+		"data: [DONE]\n\n"
+	marked := 0
+	if _, err := copyStream(context.Writer, strings.NewReader(body), streamProtocolChat, func() { marked++ }); err != nil {
+		t.Fatal(err)
+	}
+	if marked != 1 {
+		t.Fatalf("first token marked %d times", marked)
+	}
+	if strings.Contains(recorder.Body.String(), "grok2api-reasoning-start") {
+		t.Fatalf("internal marker leaked to client: %q", recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"content":"hello"`) {
+		t.Fatalf("visible Chat delta missing: %q", recorder.Body.String())
+	}
+}
+
+func TestCopyStreamPreservesBufferedTailOnReadError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	body := []byte(`data: {"choices":[{"delta":{"content":"partial"}}]}` + "\n\n:")
+	_, err := copyStream(context.Writer, &chunkErrorReader{data: body}, streamProtocolChat, nil)
+	if !errors.Is(err, errUpstreamStreamRead) {
+		t.Fatalf("copy error = %v", err)
+	}
+	if !bytes.Equal(recorder.Body.Bytes(), body) {
+		t.Fatalf("interrupted body = %q, want %q", recorder.Body.Bytes(), body)
 	}
 }
 
@@ -922,6 +1030,21 @@ func TestAnthropicUsageReconstructsCacheCreationAndSaturates(t *testing.T) {
 	usage = normalizeMetadataUsage(overflow, streamProtocolAnthropic).Usage
 	if usage.InputTokens != math.MaxInt64 || usage.TotalTokens != math.MaxInt64 {
 		t.Fatalf("anthropic saturated usage = %#v", usage)
+	}
+}
+
+func TestExtractMetadataPreservesReportedZeroUsage(t *testing.T) {
+	metadata := extractMetadata([]byte(`{"id":"resp_zero","usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0}}`))
+	if !metadata.Usage.Reported {
+		t.Fatalf("zero usage object was treated as missing: %#v", metadata.Usage)
+	}
+	if metadata.Usage.InputTokens != 0 || metadata.Usage.OutputTokens != 0 || metadata.Usage.TotalTokens != 0 {
+		t.Fatalf("zero usage object changed values: %#v", metadata.Usage)
+	}
+
+	missing := extractMetadata([]byte(`{"id":"resp_missing"}`))
+	if missing.Usage.Reported {
+		t.Fatalf("missing usage object was treated as reported: %#v", missing.Usage)
 	}
 }
 

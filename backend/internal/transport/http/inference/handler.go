@@ -1287,27 +1287,45 @@ type responseMetadata struct {
 
 func copyStream(writer gin.ResponseWriter, source io.Reader, protocol streamProtocol, onFirstToken func()) (responseMetadata, error) {
 	inspector := &responseInspector{protocol: protocol, onFirstToken: onFirstToken}
+	markerFilter := internalSSEMarkerFilter{enabled: protocol == streamProtocolChat}
 	buffer := make([]byte, responseCopyBufferBytes)
 	transferred := 0
 	for {
 		n, readErr := source.Read(buffer)
 		if n > 0 {
-			if transferred+n > maxStreamResponseTransferBytes {
-				return inspector.Metadata(), fmt.Errorf("%w: 流式响应超过 %d MiB", errResponseTransferLimit, maxStreamResponseTransferBytes>>20)
-			}
 			chunk := buffer[:n]
 			inspector.Inspect(chunk)
-			if err := setResponseWriteDeadline(writer); err != nil {
-				return inspector.Metadata(), err
+			chunk = markerFilter.Filter(chunk, false)
+			if transferred+len(chunk) > maxStreamResponseTransferBytes {
+				return inspector.Metadata(), fmt.Errorf("%w: 流式响应超过 %d MiB", errResponseTransferLimit, maxStreamResponseTransferBytes>>20)
 			}
-			if _, err := writer.Write(chunk); err != nil {
-				return inspector.Metadata(), err
+			if len(chunk) > 0 {
+				if err := setResponseWriteDeadline(writer); err != nil {
+					return inspector.Metadata(), err
+				}
+				if _, err := writer.Write(chunk); err != nil {
+					return inspector.Metadata(), err
+				}
+				writer.Flush()
+				transferred += len(chunk)
 			}
-			writer.Flush()
 			inspector.markFirstTokenForwarded()
-			transferred += n
 		}
 		if readErr != nil {
+			if tail := markerFilter.Filter(nil, true); len(tail) > 0 {
+				if transferred+len(tail) > maxStreamResponseTransferBytes {
+					return inspector.Metadata(), fmt.Errorf("%w: 流式响应超过 %d MiB", errResponseTransferLimit, maxStreamResponseTransferBytes>>20)
+				}
+				if err := setResponseWriteDeadline(writer); err != nil {
+					return inspector.Metadata(), err
+				}
+				if _, err := writer.Write(tail); err != nil {
+					return inspector.Metadata(), err
+				}
+				writer.Flush()
+				transferred += len(tail)
+			}
+			inspector.markFirstTokenForwarded()
 			if errors.Is(readErr, io.EOF) {
 				inspector.Finish()
 				return inspector.Metadata(), inspector.TerminalError()
@@ -1317,6 +1335,43 @@ func copyStream(writer gin.ResponseWriter, source io.Reader, protocol streamProt
 			}
 			return inspector.Metadata(), fmt.Errorf("%w: %w", errUpstreamStreamRead, readErr)
 		}
+	}
+}
+
+type internalSSEMarkerFilter struct {
+	enabled bool
+	pending []byte
+}
+
+func (f *internalSSEMarkerFilter) Filter(chunk []byte, final bool) []byte {
+	if !f.enabled {
+		return chunk
+	}
+	marker := []byte(reasoningStartSSEComment + "\n\n")
+	f.pending = append(f.pending, chunk...)
+	result := make([]byte, 0, len(f.pending))
+	for {
+		if index := bytes.Index(f.pending, marker); index >= 0 {
+			result = append(result, f.pending[:index]...)
+			f.pending = f.pending[index+len(marker):]
+			continue
+		}
+		if final {
+			result = append(result, f.pending...)
+			f.pending = nil
+			return result
+		}
+		keep := 0
+		limit := min(len(f.pending), len(marker)-1)
+		for size := limit; size > 0; size-- {
+			if bytes.Equal(f.pending[len(f.pending)-size:], marker[:size]) {
+				keep = size
+				break
+			}
+		}
+		result = append(result, f.pending[:len(f.pending)-keep]...)
+		f.pending = f.pending[len(f.pending)-keep:]
+		return result
 	}
 }
 
@@ -1371,6 +1426,8 @@ type responseInspector struct {
 	terminalFailure bool
 }
 
+const reasoningStartSSEComment = ": grok2api-reasoning-start"
+
 func (i *responseInspector) Inspect(chunk []byte) {
 	i.pending = append(i.pending, chunk...)
 	for {
@@ -1383,13 +1440,17 @@ func (i *responseInspector) Inspect(chunk []byte) {
 		}
 		line := bytes.TrimSpace(i.pending[:index])
 		i.pending = i.pending[index+1:]
+		if i.protocol == streamProtocolChat && bytes.Equal(line, []byte(reasoningStartSSEComment)) {
+			i.observeReasoningStart()
+			continue
+		}
 		if bytes.HasPrefix(line, []byte("data:")) {
 			value := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
 			i.observeFirstToken(value)
 			i.observeTerminal(value)
 			if !bytes.Equal(value, []byte("[DONE]")) {
 				metadata := extractMetadata(value)
-				if hasUsageSignal(metadata.Usage) {
+				if hasUsageMetadata(metadata.Usage) {
 					if metadata.Usage.ResponseModel == "" {
 						metadata.Usage.ResponseModel = i.metadata.Model
 					}
@@ -1408,6 +1469,13 @@ func (i *responseInspector) Inspect(chunk []byte) {
 			}
 		}
 	}
+}
+
+func (i *responseInspector) observeReasoningStart() {
+	if i.firstTokenSeen || i.firstTokenReady || i.onFirstToken == nil {
+		return
+	}
+	i.firstTokenReady = true
 }
 
 func (i *responseInspector) observeFirstToken(data []byte) {
@@ -1436,13 +1504,23 @@ func containsGeneratedDelta(data []byte, protocol streamProtocol) bool {
 		var event struct {
 			Type  string `json:"type"`
 			Delta string `json:"delta"`
+			Item  struct {
+				ID   string `json:"id"`
+				Type string `json:"type"`
+			} `json:"item"`
 		}
-		if json.Unmarshal(data, &event) != nil || event.Delta == "" {
+		if json.Unmarshal(data, &event) != nil {
 			return false
 		}
 		switch event.Type {
 		case "response.output_text.delta", "response.reasoning_summary_text.delta", "response.reasoning_text.delta", "response.refusal.delta", "response.function_call_arguments.delta", "response.custom_tool_call_input.delta":
-			return true
+			return event.Delta != ""
+		case "response.output_item.added":
+			// Native Responses can stream an identified reasoning item with no
+			// text delta when only encrypted_content is requested. That item is
+			// still generation start; waiting for output_text kicks thinking
+			// time out of the TPS denominator.
+			return event.Item.Type == "reasoning" && event.Item.ID != ""
 		}
 	case streamProtocolChat:
 		var event struct {
@@ -1451,6 +1529,7 @@ func containsGeneratedDelta(data []byte, protocol streamProtocol) bool {
 					Content          string `json:"content"`
 					Reasoning        string `json:"reasoning"`
 					ReasoningContent string `json:"reasoning_content"`
+					ThinkingContent  string `json:"thinking_content"`
 					Refusal          string `json:"refusal"`
 					ToolCalls        []struct {
 						Function struct {
@@ -1465,7 +1544,7 @@ func containsGeneratedDelta(data []byte, protocol streamProtocol) bool {
 		}
 		for _, choice := range event.Choices {
 			delta := choice.Delta
-			if delta.Content != "" || delta.Reasoning != "" || delta.ReasoningContent != "" || delta.Refusal != "" {
+			if delta.Content != "" || delta.Reasoning != "" || delta.ReasoningContent != "" || delta.ThinkingContent != "" || delta.Refusal != "" {
 				return true
 			}
 			for _, call := range delta.ToolCalls {
@@ -1476,7 +1555,10 @@ func containsGeneratedDelta(data []byte, protocol streamProtocol) bool {
 		}
 	case streamProtocolAnthropic:
 		var event struct {
-			Type  string `json:"type"`
+			Type         string `json:"type"`
+			ContentBlock struct {
+				Type string `json:"type"`
+			} `json:"content_block"`
 			Delta struct {
 				Type        string `json:"type"`
 				Text        string `json:"text"`
@@ -1484,7 +1566,13 @@ func containsGeneratedDelta(data []byte, protocol streamProtocol) bool {
 				PartialJSON string `json:"partial_json"`
 			} `json:"delta"`
 		}
-		if json.Unmarshal(data, &event) != nil || event.Type != "content_block_delta" {
+		if json.Unmarshal(data, &event) != nil {
+			return false
+		}
+		if event.Type == "content_block_start" {
+			return event.ContentBlock.Type == "thinking"
+		}
+		if event.Type != "content_block_delta" {
 			return false
 		}
 		switch event.Delta.Type {
@@ -1801,6 +1889,7 @@ func (value responseUsageDTO) toGatewayUsage(responseModel string) gateway.Usage
 		reasoning = value.OutputTokensDetails.ThinkingTokens
 	}
 	return gateway.Usage{
+		Reported:    true,
 		InputTokens: input, CachedInputTokens: cached,
 		OutputTokens: output, ReasoningTokens: reasoning,
 		TotalTokens: total, CostInUSDTicks: value.CostInUSDTicks,
@@ -1810,8 +1899,8 @@ func (value responseUsageDTO) toGatewayUsage(responseModel string) gateway.Usage
 	}
 }
 
-func hasUsageSignal(usage gateway.Usage) bool {
-	return usage.InputTokens > 0 || usage.OutputTokens > 0 || usage.TotalTokens > 0 ||
+func hasUsageMetadata(usage gateway.Usage) bool {
+	return usage.Reported || usage.InputTokens > 0 || usage.OutputTokens > 0 || usage.TotalTokens > 0 ||
 		usage.CachedInputTokens > 0 || usage.ReasoningTokens > 0 || usage.CostInUSDTicks > 0 ||
 		usage.NumSourcesUsed > 0 || usage.NumServerSideToolsUsed > 0 ||
 		usage.ContextInputTokens > 0 || usage.ContextOutputTokens > 0
@@ -1820,6 +1909,7 @@ func hasUsageSignal(usage gateway.Usage) bool {
 // mergeGatewayUsage merges usage from multiple streaming frames; non-zero fields overwrite,
 // preventing a later partial frame from erasing an already parsed cache hit.
 func mergeGatewayUsage(base, next gateway.Usage) gateway.Usage {
+	base.Reported = base.Reported || next.Reported
 	if next.InputTokens > 0 {
 		base.InputTokens = next.InputTokens
 	}
@@ -1927,7 +2017,7 @@ func writeGatewayError(c *gin.Context, err error) {
 	case errors.Is(err, gateway.ErrResponseStateUnsupported), errors.Is(err, gateway.ErrConversationUnsupported):
 		status, code = http.StatusBadRequest, "unsupported_parameter"
 		message = err.Error()
-	case errors.Is(err, gateway.ErrVideoInputTooLarge), errors.Is(err, gateway.ErrVideoInputUnavailable):
+	case errors.Is(err, gateway.ErrVideoInputTooLarge), errors.Is(err, gateway.ErrVideoInputUnavailable), errors.Is(err, gateway.ErrVideoParameterInvalid):
 		status, code = http.StatusBadRequest, "invalid_request"
 		message = err.Error()
 	case errors.Is(err, gateway.ErrVideoOperationUnsupported):
