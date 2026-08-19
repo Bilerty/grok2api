@@ -376,6 +376,23 @@ class GuardTests(unittest.TestCase):
             self.assertEqual(guard.state["statistics"]["actions"]["quarantined"], 1)
             self.assertEqual(guard.state["statistics"]["actions"]["restored"], 1)
 
+    def test_active_probe_rotation_advances_offset(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cfg = config(
+                state_file=Path(directory) / "state.json",
+                lock_file=Path(directory) / "lock",
+                active_probe_max_nodes=1,
+                node_ids=("1", "2", "3"),
+            )
+            good = {"expectedMatched": True, "outputTokens": 100, "reasoningTokens": 40, "outputTokensPerSecond": 100}
+            api = FakeApi(self.nodes(3), [good, good, good])
+            guard = quality_guard.Guard(cfg, api)
+            guard.run_active_cycle()
+            self.assertEqual(guard.state["active_probe_offset"], 1)
+            self.assertEqual(api.quality_calls, ["1"])
+            guard.run_active_cycle()
+            self.assertEqual(api.quality_calls, ["1", "2"])
+
     def test_auto_discovery_publishes_resolved_node_ids_for_status_consumers(self):
         with tempfile.TemporaryDirectory() as directory:
             cfg = config(state_file=Path(directory) / "state.json", lock_file=Path(directory) / "lock", mode="passive")

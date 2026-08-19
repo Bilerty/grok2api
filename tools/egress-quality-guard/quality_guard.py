@@ -1071,10 +1071,11 @@ class Guard:
         all_nodes, nodes, skip_ids = self._prepare_nodes(now)
         max_nodes = self.config.active_probe_max_nodes
         if max_nodes > 0 and len(nodes) > max_nodes:
-            offset = int(self.state.get("active_probe_offset", 0)) % len(nodes)
+            total = len(nodes)
+            offset = int(self.state.get("active_probe_offset", 0)) % total
             nodes = nodes[offset:] + nodes[:offset]
             nodes = nodes[:max_nodes]
-            self.state["active_probe_offset"] = (offset + len(nodes)) % len(nodes)
+            self.state["active_probe_offset"] = (offset + len(nodes)) % total
         for index, node in enumerate(nodes):
             if index > 0 and self.config.active_probe_node_delay_seconds > 0:
                 time.sleep(self.config.active_probe_node_delay_seconds)
