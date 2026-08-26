@@ -425,6 +425,7 @@ function Policy({ status, onEdit }: { status: QualityGuardStatus; onEdit: () => 
     [t("qualityGuard.hardThreshold"), formatTPS(config.hard_tps)],
     [t("qualityGuard.activeInterval"), formatDuration(config.active_interval_seconds)],
     [t("qualityGuard.passiveInterval"), formatDuration(config.passive_poll_seconds)],
+    [t("qualityGuard.activeProbeMaxNodesPerCycle"), config.active_probe_max_nodes === 0 ? t("qualityGuard.unlimited") : String(config.active_probe_max_nodes)],
     [t("qualityGuard.quarantineDuration"), formatDuration(config.quarantine_seconds)],
     [t("qualityGuard.minimumNodes"), String(config.min_healthy_nodes)],
   ];
@@ -447,12 +448,13 @@ const policySchema = z.object({
   consecutiveErrors: z.number().int().min(1).max(20),
   quarantineSeconds: z.number().int().min(30).max(86400),
   minHealthyNodes: z.number().int().min(1).max(1000),
+  activeProbeMaxNodesPerCycle: z.number().int().min(0).max(1000),
 }).refine((value) => value.softTPS < value.hardTPS, { path: ["hardTPS"], message: "softThresholdMustBeLower" });
 
 const DEFAULT_POLICY: QualityGuardPolicy = {
   mode: "hybrid", activeIntervalSeconds: 1800, passivePollSeconds: 5,
   softTPS: 500, hardTPS: 1000, consecutiveSoft: 2, consecutiveErrors: 2,
-  quarantineSeconds: 300, minHealthyNodes: 3,
+  quarantineSeconds: 300, minHealthyNodes: 3, activeProbeMaxNodesPerCycle: 0,
 };
 
 function PolicyEditor({ open, onOpenChange, status }: { open: boolean; onOpenChange: (open: boolean) => void; status: QualityGuardStatus }) {
@@ -497,6 +499,7 @@ function PolicyEditor({ open, onOpenChange, status }: { open: boolean; onOpenCha
           <PolicyField id="guard-error-strikes" label={t("qualityGuard.consecutiveErrors")} error={form.formState.errors.consecutiveErrors?.message}><Input id="guard-error-strikes" type="number" min={1} max={20} {...form.register("consecutiveErrors", { valueAsNumber: true })} /></PolicyField>
           <PolicyField id="guard-quarantine-seconds" label={t("qualityGuard.quarantineSeconds")} error={form.formState.errors.quarantineSeconds?.message}><Input id="guard-quarantine-seconds" type="number" min={30} max={86400} step={30} {...form.register("quarantineSeconds", { valueAsNumber: true })} /></PolicyField>
           <PolicyField id="guard-minimum-nodes" label={t("qualityGuard.minimumNodes")} error={form.formState.errors.minHealthyNodes?.message}><Input id="guard-minimum-nodes" type="number" min={1} max={nodeCount} {...form.register("minHealthyNodes", { valueAsNumber: true, max: nodeCount })} /></PolicyField>
+          <PolicyField id="guard-max-nodes" label={t("qualityGuard.activeProbeMaxNodesPerCycle")} error={form.formState.errors.activeProbeMaxNodesPerCycle?.message}><Input id="guard-max-nodes" type="number" min={0} max={1000} step={1} {...form.register("activeProbeMaxNodesPerCycle", { valueAsNumber: true })} /></PolicyField>
         </div>
         {thresholdsInvalid ? <p className="text-xs text-destructive">{t("qualityGuard.softThresholdMustBeLower")}</p> : null}
         <DialogFooter className="gap-2 sm:justify-between">
@@ -521,6 +524,7 @@ function policyFromStatus(status: QualityGuardStatus): QualityGuardPolicy {
     passivePollSeconds: config.passive_poll_seconds, softTPS: config.soft_tps, hardTPS: config.hard_tps,
     consecutiveSoft: config.consecutive_soft, consecutiveErrors: config.consecutive_errors,
     quarantineSeconds: config.quarantine_seconds, minHealthyNodes: config.min_healthy_nodes,
+    activeProbeMaxNodesPerCycle: config.active_probe_max_nodes,
   };
 }
 

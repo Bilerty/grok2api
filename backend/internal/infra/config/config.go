@@ -278,10 +278,13 @@ type QualityGuardConfig struct {
 	MaxOutputTokens         int      `yaml:"maxOutputTokens"`
 	FailClosed              bool     `yaml:"failClosed"`
 	MinimumGenerationWindow Duration `yaml:"minimumGenerationWindow"`
-	RotationURL             string   `yaml:"rotationURL"`
-	RotationToken           string   `yaml:"rotationToken"`
-	RotationTimeout         Duration `yaml:"rotationTimeout"`
-	RotatableNodeIDs        []uint64 `yaml:"rotatableNodeIDs"`
+	// ActiveProbeMaxNodesPerCycle limits how many nodes are actively probed in one cycle.
+	// 0 means no limit (probe all eligible nodes).
+	ActiveProbeMaxNodesPerCycle int      `yaml:"activeProbeMaxNodesPerCycle"`
+	RotationURL                 string   `yaml:"rotationURL"`
+	RotationToken               string   `yaml:"rotationToken"`
+	RotationTimeout             Duration `yaml:"rotationTimeout"`
+	RotatableNodeIDs            []uint64 `yaml:"rotatableNodeIDs"`
 	// RequestRetry withholds a thinking-model stream that already has enough
 	// visible output and no reasoning, then retries on another account.
 	RequestRetry QualityGuardRequestRetryConfig `yaml:"requestRetry"`
@@ -941,6 +944,7 @@ func defaultConfig() Config {
 			QuarantineDuration: Duration(5 * time.Minute), NoAccountBackoff: Duration(5 * time.Minute),
 			MinimumHealthyNodes: 3, MaxOutputTokens: 384,
 			MinimumGenerationWindow: Duration(time.Second), RotationTimeout: Duration(45 * time.Second),
+			ActiveProbeMaxNodesPerCycle: 0,
 			RequestRetry: QualityGuardRequestRetryConfig{
 				MaxAttempts: 6, HoldTimeout: Duration(30 * time.Second), MinOutputTokens: 8, OnExhausted: "fail_closed",
 				AccountCooldown: Duration(12 * time.Hour), IdleAccountCooldown: Duration(15 * time.Minute),

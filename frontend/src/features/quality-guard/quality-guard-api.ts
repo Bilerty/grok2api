@@ -11,6 +11,7 @@ export type QualityGuardPolicy = {
   consecutiveErrors: number;
   quarantineSeconds: number;
   minHealthyNodes: number;
+  activeProbeMaxNodesPerCycle: number;
 };
 
 export type QualityGuardNodeState = {
@@ -103,6 +104,7 @@ export type QualityGuardStatus = {
     consecutive_errors: number;
     quarantine_seconds: number;
     min_healthy_nodes: number;
+    active_probe_max_nodes: number;
     max_output_tokens: number;
     fail_closed: boolean;
     min_generation_ms: number;
@@ -145,7 +147,8 @@ const configValidator = hasShape({
   mode: isOneOf("active", "passive", "hybrid"), model: isString,
   node_ids: isArrayOf(isString), active_interval_seconds: isNumber, passive_poll_seconds: isNumber,
   soft_tps: isNumber, hard_tps: isNumber, consecutive_soft: isNumber, consecutive_errors: isNumber,
-  quarantine_seconds: isNumber, min_healthy_nodes: isNumber, max_output_tokens: isNumber,
+  quarantine_seconds: isNumber, min_healthy_nodes: isNumber, active_probe_max_nodes: isNumber,
+  max_output_tokens: isNumber,
   fail_closed: isBoolean, min_generation_ms: isNumber,
 });
 const detectionStatsValidator = hasShape({

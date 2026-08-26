@@ -143,6 +143,9 @@ qualityGuard:
   maxOutputTokens: 384
   failClosed: false
   minimumGenerationWindow: 1s
+  # 每轮主动探测最多探测的节点数；0 表示不限制（探测全部合格节点）。
+  # 可在质量守护页面“编辑质量守护策略”中热更新。
+  activeProbeMaxNodesPerCycle: 0
   # 可选的受信任换 IP Webhook；启用时同时填写 rotatableNodeIDs。
   rotationURL: ""
   rotationToken: ""
