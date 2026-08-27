@@ -24,6 +24,9 @@
 > 推荐个人新项目 [DEEIX-AI / DEEIX-Chat](https://github.com/DEEIX-AI/DEEIX-Chat)：面向多模型路由、对话、文件、工具、计费与运维的一体化轻量 AI 平台。
 
 > [!NOTE]
+> **本 fork（lij768423-svg/grok2api）对齐 18183 lab。** 默认打开 `qualityGuard` + `requestRetry`（hold 30s、假思考 12h 冷却、空流 15m），`docker compose up -d` 会带上质量守护 sidecar。镜像：[`ghcr.io/lij768423-svg/grok2api:v3.1.4-lab`](https://github.com/lij768423-svg/grok2api/pkgs/container/grok2api)。往上游提 PR 请从官方 `v3.1.4` 开分支，不要带这些 lab 默认。
+
+> [!NOTE]
 > 本项目仅供技术研究与学习交流。使用时请务必遵循 Grok 官方的使用条款及当地法律法规，否则一切后果自负！
 
 ## 赞助商
@@ -161,9 +164,9 @@ flowchart LR
 官方镜像支持 `linux/amd64` 和 `linux/arm64`。
 
 ```bash
-git clone https://github.com/chenyme/grok2api.git
+git clone https://github.com/lij768423-svg/grok2api.git
 cd grok2api
-cp config.example.yaml config.yaml
+./scripts/bootstrap-lab-config.sh
 ```
 
 生成密钥并写入 `config.yaml`：
@@ -183,9 +186,10 @@ bootstrapAdmin:
   password: "替换为强密码"
 ```
 
-启动服务：
+启动服务（lab：主程序 + 质量守护）：
 
 ```bash
+./scripts/bootstrap-lab-config.sh   # 生成 config.yaml 和随机密钥
 docker compose pull
 docker compose up -d
 docker compose logs -f grok2api
@@ -353,12 +357,13 @@ curl http://127.0.0.1:8000/v1/responses \
 - 按作用域配置无回退、直连或固定节点
 - 代理池模式，单次连接失败不会触发全局冷却
 - 固定代理传输失败后立即复测；同节点复测自动合并，后续绑定请求限时等待并在恢复后快速重试
-- 可选的[出口质量守护程序](./tools/egress-quality-guard/README.zh-CN.md)，支持逐节点模型探测、防误杀隔离和自动恢复；通过内置的 `quality-guard` Compose profile 按需启用
+- [出口质量守护程序](./tools/egress-quality-guard/README.zh-CN.md)：逐节点模型探测、防误杀隔离和自动恢复；`docker compose up -d` 默认启动 sidecar（passive）
 - 代理用户名包含 `{account}` 的节点会被识别为租约级节点：被动审计异常只会临时移出对应的账号租约，冷却后固定使用同一账号和节点复测，复测异常会续期；若 sidecar 不可用，已到期的隔离不会继续阻断路由，避免孤儿状态永久卡住账号。共享节点始终不会因此停用，也不会暴露渲染后的代理身份。普通固定 sticky 会话仍可按独立节点管理
+- 固定 sticky 会话应各自建成独立节点（`proxyPool=false`）。不要把多条 sticky 合成一个节点，否则质量守护只能整组摘流，无法定位坏会话
 
 Hysteria 与 TUIC 暂未支持。FlareSolverr 仅接受 HTTP/SOCKS 代理地址，因此自动刷新 Clearance 暂不能直接使用隧道分享链接。
 
-首次启用时只需在 `config.yaml` 中增加 `qualityGuard` 并启动 profile。主程序会自动创建并稳定复用不可导出的系统探测身份：
+`config.example.yaml` 已打开 qualityGuard。主程序会自动创建并稳定复用不可导出的系统探测身份：
 
 ```yaml
 qualityGuard:
@@ -380,14 +385,14 @@ qualityGuard:
 `requestRetry` 在网关请求路径上生效，与 sidecar 探测/隔离相互独立。示例配置默认开启。开启后，可见输出达到 `minOutputTokens` 且全程无流式 reasoning 时**不发给用户**，排除该账号再试；全部仍无推理则按 `onExhausted` 返回 `503 quality_degraded` 或放出最后一枪。不处理图/视频、stored response 钉账号和 ForcedEgress 探针。Grok TUI 带 tools 的回合仍会 hold，避免 0-thinking 降智流跳过闸门。
 
 ```bash
-docker compose --profile quality-guard up -d --build
+docker compose up -d
 ```
 
 曾使用预览版 `clientKeyID` 配置的现有部署可以直接升级：该字段会被兼容读取但不再使用，可安全删除；原来手工创建的探测 Key 不会被程序擅自删除。
 
-后续修改该配置时，执行 `docker compose --profile quality-guard restart grok2api egress-quality-guard` 使基础配置重新加载；管理页面中的策略调整仍支持热加载。
+后续修改该配置时，执行 `docker compose restart grok2api egress-quality-guard` 使基础配置重新加载；管理页面中的策略调整仍支持热加载。
 
-普通的 `docker compose up -d` 不会启动守护程序，也不会产生主动探测流量。sidecar 只从主程序获得权限受限的内部凭据，不保存或使用管理员密码。启用自动隔离前请先阅读上面的详细说明。
+sidecar 只从主程序获得权限受限的内部凭据，不保存或使用管理员密码。启用自动隔离前请先阅读上面的详细说明。
 
 Resin 用户名支持 `{account}`：
 

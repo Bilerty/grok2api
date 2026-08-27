@@ -943,11 +943,12 @@ func defaultConfig() Config {
 			LedgerUnhealthyGrace: Duration(10 * time.Second), LedgerQueueHighWatermarkPct: 90,
 		},
 		QualityGuard: QualityGuardConfig{
-			Model: "grok-4.6", Mode: "hybrid",
+			Enabled: true,
+			Model:   "grok-4.6", Mode: "passive",
 			ActiveInterval: Duration(30 * time.Minute), PassivePollInterval: Duration(5 * time.Second),
-			SoftTPS: 500, HardTPS: 1000, ConsecutiveSoft: 2, ConsecutiveErrors: 2,
+			SoftTPS: 500, HardTPS: 2500, ConsecutiveSoft: 2, ConsecutiveErrors: 2,
 			QuarantineDuration: Duration(5 * time.Minute), NoAccountBackoff: Duration(5 * time.Minute),
-			MinimumHealthyNodes: 3, MaxOutputTokens: 384,
+			MinimumHealthyNodes: 1, MaxOutputTokens: 384,
 			MinimumGenerationWindow: Duration(time.Second), RotationTimeout: Duration(45 * time.Second),
 			RequestRetry: QualityGuardRequestRetryConfig{
 				Enabled:     true,
