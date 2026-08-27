@@ -7,7 +7,7 @@ name: grok2api
 services:
   grok2api:
     container_name: grok2api
-    image: "${GROK2API_IMAGE:-ghcr.io/lij768423-svg/grok2api:v3.1.4-lab}"
+    image: "${GROK2API_IMAGE:-ghcr.io/lij768423-svg/grok2api:v3.1.5-lab}"
     build:
       context: .
       dockerfile: Dockerfile
@@ -65,7 +65,7 @@ services:
   # 出口质量守护：默认随主服务启动（passive，不额外烧 token）。
   egress-quality-guard:
     container_name: grok2api-egress-quality-guard
-    image: "${GROK2API_QG_IMAGE:-ghcr.io/lij768423-svg/grok2api-quality-guard:v3.1.4-lab}"
+    image: "${GROK2API_QG_IMAGE:-ghcr.io/lij768423-svg/grok2api-quality-guard:v3.1.5-lab}"
     build:
       context: .
       dockerfile: tools/egress-quality-guard/Dockerfile
