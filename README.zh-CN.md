@@ -24,7 +24,36 @@
 > 推荐个人新项目 [DEEIX-AI / DEEIX-Chat](https://github.com/DEEIX-AI/DEEIX-Chat)：面向多模型路由、对话、文件、工具、计费与运维的一体化轻量 AI 平台。
 
 > [!NOTE]
-> **本 fork（lij768423-svg/grok2api）对齐 18183 lab。** 默认打开 `qualityGuard` + `requestRetry`（hold 30s、假思考 12h 冷却、空流 15m），`docker compose up -d` 会带上质量守护 sidecar。镜像：[`ghcr.io/lij768423-svg/grok2api:v3.1.4-lab`](https://github.com/lij768423-svg/grok2api/pkgs/container/grok2api)。往上游提 PR 请从官方 `v3.1.4` 开分支，不要带这些 lab 默认。
+> **本 fork（lij768423-svg/grok2api）开箱即用。** 基于官方最新，默认打开 `qualityGuard` + `requestRetry`：hold 30s、minOutput 8、密文 floor 256B / reasoning×4、burst（hold 过期后的短问候仍扣）、缺思考 12h 冷却、空流 15m。`docker compose up -d --build` 会带上质量守护 sidecar。不要 pull `ghcr.io/chenyme/grok2api:latest`（官方同参数但默认不拦截）。往上游提 PR 用 [#1013](https://github.com/chenyme/grok2api/pull/1013) 那条分支，不要带 fork 的 `enabled: true`。
+
+## 一键安装提示词
+
+整段复制发给你的 AI，只改最后的家宽：
+
+```text
+按这个文档装，不要发挥：
+https://github.com/lij768423-svg/grok2api/blob/main/AI_GROK2API_INSTALL.md
+
+主路径：lij768423-svg/grok2api（fork）+ Quality Guard sidecar。不要装 CPA。
+不要 pull ghcr.io/chenyme/grok2api:latest，必须 clone 本 fork 再 docker compose up -d --build。
+
+这个 fork 开箱即用：官方最新 + 缺思考拦截默认开。
+- hold 30s / minOutput 8 / 6 枪 / fail_closed
+- 短 encrypted_content stub 不算思考；floor = max(256B, reasoning_tokens×4)
+- hold 到期后的短问候 + 高 reasoning（「你好」）继续扣
+- 缺思考冷却 12h，空流 15m；docker compose up -d 带 sidecar
+
+家宽全部用上，每个 sticky 一个 Mihomo listener + 一个 Grok2API 节点。
+禁止只开 1 个交差。禁止把多条合成一个「住宅池」。
+
+机器：Linux + Docker，装到 ~/grok-stack（新目录，别覆盖现网）。
+有邮箱再一起装注册机；没有也行，先把出口和 Guard 拉起来。
+
+家宽（一行一条，URL / host:port:user:pass / 带 sid 都行）：
+
+```
+
+完整步骤：[AI_GROK2API_INSTALL.md](./AI_GROK2API_INSTALL.md)。家宽脚本：[`scripts/from_residential.py`](./scripts/from_residential.py)。
 
 > [!NOTE]
 > 本项目仅供技术研究与学习交流。使用时请务必遵循 Grok 官方的使用条款及当地法律法规，否则一切后果自负！
