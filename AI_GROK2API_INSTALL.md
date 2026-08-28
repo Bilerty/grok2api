@@ -20,7 +20,8 @@ https://github.com/lij768423-svg/grok2api/blob/main/AI_GROK2API_INSTALL.md
 这个 fork 开箱即用：官方最新 + 缺思考拦截默认开。
 - hold 30s / minOutput 8 / 6 枪 / fail_closed
 - 短 encrypted_content stub 不算思考；floor = max(256B, reasoning_tokens×4)
-- hold 到期后的短问候 + 高 reasoning（「你好」）继续扣
+- hold 到期后的短问候 + 高 reasoning（「你好」）继续扣；floor 达标但 1 秒内吐短回复也扣
+- TUI 续聊（previous_response_id）和 hosted tools 仍 hold，扣住后换号
 - 缺思考冷却 12h，空流 15m；docker compose up -d 带 sidecar
 
 家宽全部用上，每个 sticky 一个 Mihomo listener + 一个 Grok2API 节点。

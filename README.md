@@ -24,7 +24,7 @@
 > Check out [DEEIX-AI / DEEIX-Chat](https://github.com/DEEIX-AI/DEEIX-Chat), a lightweight, integrated AI platform for model routing, chat, files, tools, billing, identity, and operations.
 
 > [!NOTE]
-> **This fork (lij768423-svg/grok2api) is out of the box.** Official latest plus `qualityGuard` / `requestRetry` ON: 30s hold, minOutput 8, ciphertext floor 256B / reasoning×4, burst (hold-expired short greetings still withheld), 12h missing-thinking cooldown, 15m idle. `docker compose up -d --build` starts the sidecar. Do not pull `ghcr.io/chenyme/grok2api:latest` (same numbers, intercept off). Upstream PR: [chenyme#1013](https://github.com/chenyme/grok2api/pull/1013) — do not include this fork's `enabled: true`.
+> **This fork (lij768423-svg/grok2api) is out of the box.** Official latest plus `qualityGuard` / `requestRetry` ON: 30s hold, minOutput 8, ciphertext floor 256B / reasoning×4, burst (hold-expired short greetings and floor-met dumps still withheld), TUI follow-ups / hosted tools held, 12h missing-thinking cooldown, 15m idle. `docker compose up -d --build` starts the sidecar. Do not pull `ghcr.io/chenyme/grok2api:latest` (same numbers, intercept off). Upstream: [chenyme#1013](https://github.com/chenyme/grok2api/pull/1013) floor, [chenyme#1015](https://github.com/chenyme/grok2api/pull/1015) TUI hold — do not include this fork's `enabled: true`.
 
 ## One-shot install prompt
 
@@ -400,8 +400,9 @@ qualityGuard:
   enabled: true
   model: "grok-4.6"
   # Withhold thinking-model streams that have no streamed reasoning.
-  # Observe for up to 30s. An open stream with a reasoning start and visible
-  # output is released at the deadline; empty/terminal failures still retry.
+  # Observe for up to 30s. A stub plus enough visible output at the deadline
+  # is withheld; empty stub-only streams keep waiting. Floor-met dumps that
+  # flush a short greeting in under 1s are also withheld.
   requestRetry:
     enabled: true
     maxAttempts: 6
@@ -412,7 +413,7 @@ qualityGuard:
     idleAccountCooldown: 15m
 ```
 
-`requestRetry` runs on the gateway request path and is independent of the sidecar. The example enables it. When enabled, a thinking-model stream with enough visible output and no streamed reasoning is **not delivered**; another account is tried. If every attempt still has no reasoning, `onExhausted` either returns `503 quality_degraded` or delivers the last body. Image, video, stored-response, and ForcedEgress probe requests are unchanged. Grok TUI tool turns stay held so 0-thinking dumps cannot skip the gate.
+`requestRetry` runs on the gateway request path and is independent of the sidecar. This fork enables it. A thinking-model stream with enough visible output and no streamed reasoning is **not delivered**; another account is tried. TUI follow-ups (`previous_response_id`) and hosted-tool turns stay held — the first attempt stays pinned, a withhold unpins and rotates. Image, video, and ForcedEgress probe requests are unchanged. If every attempt still has no reasoning, `onExhausted` either returns `503 quality_degraded` or delivers the last body.
 
 ```bash
 docker compose up -d
