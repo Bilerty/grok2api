@@ -145,7 +145,10 @@ python3 scripts/from_residential_direct.py ~/grok-stack/residential.dump \
   --out-dir ~/grok-stack/egress-direct
 ```
 
-报告（`direct-report.md` / `exit-ips.json`，0600）里就是验收要的 `节点 → 出口 IP` 表。脚本按名称幂等：重跑只补缺，不会重复建。
+报告（`direct-report.md` / `exit-ips.json`，0600）里就是验收要的 `节点 → 出口 IP` 表。脚本按名称幂等：重跑只补缺，不会重复建。两点实测经验：
+
+- 全量执行含出口测试，432 条 6 并发约 6–10 分钟；只建不测加 `--skip-tests`，并发用 `--workers` 调。
+- 个别节点单轮 unhealthy 多为瞬时（供应商网关抖动），直接重跑一遍脚本就好；想看 sticky 稳定性就跑两轮对比 `exit-ips.json`。
 
 ### B. 起 Mihomo（仅方案 B；方案 A 跳过本步）
 
@@ -165,6 +168,12 @@ curl -s --max-time 20 --proxy http://127.0.0.1:8301 https://api.ipify.org
 cd ~/grok-stack/grok2api
 ./scripts/bootstrap-lab-config.sh
 # 或：cp config.example.yaml config.yaml 后自己填 secrets / bootstrapAdmin
+```
+
+bootstrap 打印的 admin 密码只出现一次，当场存下来（后面直连脚本 / 账号导入都要用）：
+
+```bash
+printf '%s\n' '<刚打印的密码>' > ~/grok-stack/admin-password.txt   # chmod 600，别贴聊天里
 ```
 
 `config.example.yaml` 已经是 lab 默认，**不要改回官方的 `requestRetry.enabled: false` / `minOutputTokens: 32`**。核对：

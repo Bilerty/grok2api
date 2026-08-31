@@ -19,6 +19,7 @@ import json
 import os
 import stat
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -128,10 +129,7 @@ def plan_report(rows: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def provision(args: argparse.Namespace, rows: list[dict]) -> None:
-    client = Client(args.api_base, timeout=60)
-    token = client.login(args.username, args.password)
-    client.token = token
+def provision(args: argparse.Namespace, rows: list[dict], client: Client) -> None:
 
     existing_profiles = {p.get("name"): p for p in client.list_all("/api/admin/v1/egress-proxy-profiles")}
     existing_nodes = {n.get("name"): n for n in client.list_all("/api/admin/v1/egress-nodes")}
@@ -144,7 +142,7 @@ def provision(args: argparse.Namespace, rows: list[dict]) -> None:
                 return item
         return None
 
-    lock = concurrent.futures.Lock()
+    lock = threading.Lock()
 
     def one(row: dict) -> dict:
         label, session = row["label"], row["session"]
@@ -190,8 +188,7 @@ def provision(args: argparse.Namespace, rows: list[dict]) -> None:
     return done
 
 
-def run_tests(args: argparse.Namespace, rows: list[dict]) -> None:
-    client = Client(args.api_base, timeout=200)
+def run_tests(args: argparse.Namespace, rows: list[dict], client: Client) -> None:
 
     def test(row: dict) -> dict:
         node_id = row.get("node_id")
@@ -282,12 +279,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"dry-run: parsed {len(rows)} sessions; plan at {out / 'direct-plan.md'}")
         return 0
 
-    done = provision(args, rows)
+    client = Client(args.api_base)
+    client.token = client.login(args.username, args.password)
+
+    done = provision(args, rows, client)
     errors = [r for r in done if "error" in r.get("result", "")]
     print(f"provisioned: {len(done) - len(errors)} ok, {len(errors)} errors")
 
     if not args.skip_tests:
-        done = run_tests(args, done)
+        done = run_tests(args, done, client)
 
     report, data = summary_report(done)
     write_private(out / "direct-report.md", report)
