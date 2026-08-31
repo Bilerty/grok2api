@@ -44,7 +44,7 @@ https://github.com/lij768423-svg/grok2api/blob/main/AI_GROK2API_INSTALL.md
 1. 本文（落地顺序）
 2. 本仓库 `config.example.yaml`（`requestRetry` 已开）
 3. 本仓库 `tools/egress-quality-guard/README.zh-CN.md`
-4. 家宽脚本：本仓库 `scripts/from_residential.py`（方案 B 用；方案 A 可跳）
+4. 家宽脚本：方案 B 用 `scripts/from_residential.py`；方案 A 用 `scripts/from_residential_direct.py`（解析 + 建 profile/节点 + 测出口，一条龙）
 
 不要走 CPA 插件。那是旁路，不是交付。
 
@@ -132,7 +132,20 @@ python3 ~/grok-stack/grok2api/scripts/from_residential.py \
 
 看 `egress-gen/plan.md`。`lab_like: false` 就告诉用户再补 sticky，但仍把已有的全部开成节点。
 
-方案 A 用不到 `mihomo.yaml`，可以只拿 `plan.md` / `guard.json` 当数量与角色参考，或者干脆自己解析「名称 | URL」，把原文写到本机文件（0600）不进 git 即可。
+方案 A 用不到 `mihomo.yaml`。推荐直接用直连脚本：`--dry-run` 离线解析出 `direct-plan.md`（条数、名称、脱敏链接），等 C 步服务起来后再全量跑（登录 → 建 profile/节点 → 测出口 → 写报告）。解析逻辑与 `from_residential.py` 完全同源，行格式通用：
+
+```bash
+# 离线解析（不碰 API）
+python3 scripts/from_residential_direct.py ~/grok-stack/residential.dump --dry-run \
+  --out-dir ~/grok-stack/egress-direct
+# 服务起来后全量执行（密码用 --password-file 或 GROK2API_ADMIN_PASSWORD 传，别贴聊天里）
+python3 scripts/from_residential_direct.py ~/grok-stack/residential.dump \
+  --api-base http://127.0.0.1:8000 \
+  --password-file ~/grok-stack/admin-password.txt \
+  --out-dir ~/grok-stack/egress-direct
+```
+
+报告（`direct-report.md` / `exit-ips.json`，0600）里就是验收要的 `节点 → 出口 IP` 表。脚本按名称幂等：重跑只补缺，不会重复建。
 
 ### B. 起 Mihomo（仅方案 B；方案 A 跳过本步）
 
@@ -204,6 +217,8 @@ GROK2API_QG_IMAGE=ghcr.io/<命名空间>/grok2api-quality-guard:<tag>
 ### D. 每条 sticky 一个出口节点（按步骤 0 选的路径）
 
 **方案 A（直连）：每条 sticky 一个 proxy-profile + 一个绑定它的节点**
+
+自动化路径就是上面的 `scripts/from_residential_direct.py`。下面是它等价的手工 API 细节（用于理解、补数或脚本失败时兜底）。
 
 管理端 Egress 新建，或直接调 API（登录 `POST /api/admin/v1/auth/login` 拿 accessToken，后续带 `Authorization: Bearer`）：
 
