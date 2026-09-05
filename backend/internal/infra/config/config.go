@@ -164,23 +164,24 @@ type BuildProviderConfig struct {
 const DefaultBuildFallbackBaseURL = "https://api.x.ai/v1"
 
 type WebProviderConfig struct {
-	BaseURL             string   `yaml:"baseURL"`
-	StatsigMode         string   `yaml:"-"`
-	StatsigManualValue  string   `yaml:"-"`
-	StatsigSignerURL    string   `yaml:"-"`
-	ClearanceMode       string   `yaml:"-"`
-	FlareSolverrURL     string   `yaml:"-"`
-	ClearanceTimeout    Duration `yaml:"-"`
-	ClearanceRefresh    Duration `yaml:"-"`
-	QuotaTimeout        Duration `yaml:"quotaTimeout"`
-	ChatTimeout         Duration `yaml:"chatTimeout"`
-	StreamIdleTimeout   Duration `yaml:"-"`
-	ImageTimeout        Duration `yaml:"imageTimeout"`
-	VideoTimeout        Duration `yaml:"videoTimeout"`
-	MediaConcurrency    int      `yaml:"mediaConcurrency"`
-	AllowNSFW           bool     `yaml:"allowNSFW"`
-	RecoveryBackoffBase Duration `yaml:"recoveryBackoffBase"`
-	RecoveryBackoffMax  Duration `yaml:"recoveryBackoffMax"`
+	BaseURL              string   `yaml:"baseURL"`
+	StatsigMode          string   `yaml:"-"`
+	StatsigManualValue   string   `yaml:"-"`
+	StatsigSignerURL     string   `yaml:"-"`
+	ClearanceMode        string   `yaml:"-"`
+	FlareSolverrURL      string   `yaml:"-"`
+	ClearanceTimeout     Duration `yaml:"-"`
+	ClearanceRefresh     Duration `yaml:"-"`
+	QuotaTimeout         Duration `yaml:"quotaTimeout"`
+	ChatTimeout          Duration `yaml:"chatTimeout"`
+	StreamIdleTimeout    Duration `yaml:"-"`
+	ImageTimeout         Duration `yaml:"imageTimeout"`
+	VideoTimeout         Duration `yaml:"videoTimeout"`
+	MediaConcurrency     int      `yaml:"mediaConcurrency"`
+	AllowNSFW            bool     `yaml:"allowNSFW"`
+	FreeVideoDurationCap int      `yaml:"freeVideoDurationCap"`
+	RecoveryBackoffBase  Duration `yaml:"recoveryBackoffBase"`
+	RecoveryBackoffMax   Duration `yaml:"recoveryBackoffMax"`
 }
 
 type ConsoleProviderConfig struct {
@@ -278,10 +279,13 @@ type QualityGuardConfig struct {
 	MaxOutputTokens         int      `yaml:"maxOutputTokens"`
 	FailClosed              bool     `yaml:"failClosed"`
 	MinimumGenerationWindow Duration `yaml:"minimumGenerationWindow"`
-	RotationURL             string   `yaml:"rotationURL"`
-	RotationToken           string   `yaml:"rotationToken"`
-	RotationTimeout         Duration `yaml:"rotationTimeout"`
-	RotatableNodeIDs        []uint64 `yaml:"rotatableNodeIDs"`
+	// ActiveProbeMaxNodesPerCycle limits how many nodes are actively probed in one cycle.
+	// 0 means no limit (probe all eligible nodes).
+	ActiveProbeMaxNodesPerCycle int      `yaml:"activeProbeMaxNodesPerCycle"`
+	RotationURL                 string   `yaml:"rotationURL"`
+	RotationToken               string   `yaml:"rotationToken"`
+	RotationTimeout             Duration `yaml:"rotationTimeout"`
+	RotatableNodeIDs            []uint64 `yaml:"rotatableNodeIDs"`
 	// RequestRetry withholds a thinking-model stream that already has enough
 	// visible output and no reasoning, then retries on another account.
 	RequestRetry QualityGuardRequestRetryConfig `yaml:"requestRetry"`
@@ -646,6 +650,9 @@ func (c Config) Validate() error {
 	if c.Provider.Web.MediaConcurrency < 1 || c.Provider.Web.MediaConcurrency > 64 {
 		return errors.New("provider.web 媒体并发必须在 1 到 64 之间")
 	}
+	if c.Provider.Web.FreeVideoDurationCap != 0 && (c.Provider.Web.FreeVideoDurationCap < settingsdomain.MinWebFreeVideoDurationCap || c.Provider.Web.FreeVideoDurationCap > settingsdomain.MaxWebFreeVideoDurationCap) {
+		return errors.New("provider.web free 视频时长上限必须在 1 到 15 秒之间")
+	}
 	consoleURL, err := url.ParseRequestURI(strings.TrimSpace(c.Provider.Console.BaseURL))
 	if err != nil || consoleURL.Scheme != "https" || consoleURL.Host == "" || consoleURL.User != nil {
 		return errors.New("provider.console.baseURL 必须是无凭据的 HTTPS URL")
@@ -905,7 +912,7 @@ func defaultConfig() Config {
 				ChatTimeout:  Duration(2 * time.Minute), StreamIdleTimeout: Duration(settingsdomain.DefaultWebStreamIdleTimeout),
 				ImageTimeout:     Duration(3 * time.Minute),
 				VideoTimeout:     Duration(15 * time.Minute),
-				MediaConcurrency: 4, RecoveryBackoffBase: Duration(30 * time.Second),
+				MediaConcurrency: 4, FreeVideoDurationCap: settingsdomain.DefaultWebFreeVideoDurationCap, RecoveryBackoffBase: Duration(30 * time.Second),
 				RecoveryBackoffMax: Duration(30 * time.Minute),
 			},
 			Console: ConsoleProviderConfig{BaseURL: "https://console.x.ai", ChatTimeout: Duration(5 * time.Minute), StreamIdleTimeout: Duration(settingsdomain.DefaultConsoleStreamIdleTimeout)},
@@ -950,6 +957,7 @@ func defaultConfig() Config {
 			QuarantineDuration: Duration(5 * time.Minute), NoAccountBackoff: Duration(5 * time.Minute),
 			MinimumHealthyNodes: 1, MaxOutputTokens: 384,
 			MinimumGenerationWindow: Duration(time.Second), RotationTimeout: Duration(45 * time.Second),
+			ActiveProbeMaxNodesPerCycle: 0,
 			RequestRetry: QualityGuardRequestRetryConfig{
 				Enabled:     true,
 				MaxAttempts: 6, HoldTimeout: Duration(30 * time.Second), MinOutputTokens: 8, OnExhausted: "fail_closed",

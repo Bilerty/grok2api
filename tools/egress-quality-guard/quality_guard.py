@@ -37,6 +37,7 @@ RUNTIME_CONFIG_FIELDS = {
     "consecutive_errors",
     "quarantine_seconds",
     "min_healthy_nodes",
+    "active_probe_max_nodes",
 }
 
 
@@ -81,6 +82,7 @@ class Config:
     max_output_tokens: int
     fail_closed: bool
     min_generation_ms: int
+    active_probe_max_nodes: int
     rotation_url: str
     rotation_token: str
     rotation_timeout_seconds: int
@@ -134,6 +136,7 @@ class Config:
             max_output_tokens=int(values.get("max_output_tokens") or 0),
             fail_closed=bool(values.get("fail_closed")),
             min_generation_ms=int(values.get("min_generation_ms") or 0),
+            active_probe_max_nodes=int(values.get("active_probe_max_nodes") or 0),
             rotation_url=str(values.get("rotation_url") or "").strip(),
             rotation_token=str(values.get("rotation_token") or ""),
             rotation_timeout_seconds=int(values.get("rotation_timeout_seconds") or 0),
@@ -188,6 +191,8 @@ class Config:
             raise ValueError("qualityGuard.minimumHealthyNodes must fit the configured node count")
         if self.min_generation_ms > self.request_timeout_seconds * 1000:
             raise ValueError("qualityGuard.minimumGenerationWindow must fit the request timeout")
+        if self.active_probe_max_nodes < 0 or self.active_probe_max_nodes > 1000:
+            raise ValueError("qualityGuard.activeProbeMaxNodesPerCycle must be between 0 and 1000")
         if self.rotation_url:
             rotation_url = urllib.parse.urlparse(self.rotation_url)
             if rotation_url.scheme not in {"http", "https"} or not rotation_url.netloc:
@@ -704,6 +709,7 @@ class Guard:
             "max_output_tokens": self.config.max_output_tokens,
             "fail_closed": self.config.fail_closed,
             "min_generation_ms": self.config.min_generation_ms,
+            "active_probe_max_nodes": self.config.active_probe_max_nodes,
             "rotatable_node_ids": list(self.config.rotatable_node_ids),
             "prompt": self.config.prompt,
             "expected": self.config.expected,
@@ -1399,14 +1405,33 @@ class Guard:
     def run_active_cycle(self) -> None:
         now = time.time()
         all_nodes, nodes, skip_ids = self._prepare_nodes(now)
+        # Only normal scheduled active probes participate in the per-cycle
+        # rotation; lease-scoped, quarantined, and disabled nodes are handled
+        # by upstream recovery/lease logic instead.
+        candidates = []
+        for node in nodes:
+            node_id = str(node["id"])
+            state = self._state_for(node_id)
+            if not self._is_lease_scoped(node) and node_id not in skip_ids and node.get("enabled") and not state.get("disabled_by_guard"):
+                candidates.append(node)
+        max_nodes = self.config.active_probe_max_nodes
+        selected_ids = None
+        if max_nodes > 0 and len(candidates) > max_nodes:
+            total = len(candidates)
+            offset = int(self.state.get("active_probe_offset", 0)) % total
+            rotated = candidates[offset:] + candidates[:offset]
+            selected = rotated[:max_nodes]
+            self.state["active_probe_offset"] = (offset + len(selected)) % total
+            selected_ids = {str(node["id"]) for node in selected}
         for node in nodes:
             node_id = str(node["id"])
             state = self._state_for(node_id)
             if self._is_lease_scoped(node):
                 self._save()
                 continue
-            if node_id not in skip_ids and node.get("enabled") and not state.get("disabled_by_guard"):
-                self._probe_active(all_nodes, node, now)
+            if selected_ids is None or node_id in selected_ids:
+                if node_id not in skip_ids and node.get("enabled") and not state.get("disabled_by_guard"):
+                    self._probe_active(all_nodes, node, now)
             self._save()
         self.state["last_active_cycle_at"] = time.time()
         self._save()

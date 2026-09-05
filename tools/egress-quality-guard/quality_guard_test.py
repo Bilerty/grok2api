@@ -27,7 +27,8 @@ def config(**overrides):
         consecutive_soft=2, consecutive_errors=2, quarantine_seconds=300,
         no_account_backoff_seconds=300,
         min_healthy_nodes=3, max_output_tokens=384, prompt="probe", expected="QUALITY_OK",
-        fail_closed=False, min_generation_ms=1000, rotation_url="", rotation_token="",
+        fail_closed=False, min_generation_ms=1000, active_probe_max_nodes=0,
+        rotation_url="", rotation_token="",
         rotation_timeout_seconds=45, rotatable_node_ids=(),
         state_file=Path("/tmp/state.json"), lock_file=Path("/tmp/lock"),
         runtime_config_file=Path("/tmp/runtime-config.json"),
@@ -287,7 +288,7 @@ class ConfigTests(unittest.TestCase):
     def test_runtime_config_overrides_only_strategy_fields(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "runtime-config.json"
-            path.write_text('{"version":1,"settings":{"mode":"passive","active_interval_seconds":3600,"passive_poll_seconds":10,"soft_tps":400,"hard_tps":900,"consecutive_soft":3,"consecutive_errors":4,"quarantine_seconds":600,"min_healthy_nodes":2}}', encoding="utf-8")
+            path.write_text('{"version":1,"settings":{"mode":"passive","active_interval_seconds":3600,"passive_poll_seconds":10,"soft_tps":400,"hard_tps":900,"consecutive_soft":3,"consecutive_errors":4,"quarantine_seconds":600,"min_healthy_nodes":2,"active_probe_max_nodes":3}}', encoding="utf-8")
             base = config(runtime_config_file=path, node_ids=("1", "2", "3"))
             loaded = quality_guard.load_runtime_config(base, path)
             self.assertEqual((loaded.mode, loaded.soft_tps, loaded.quarantine_seconds), ("passive", 400, 600))
@@ -438,6 +439,23 @@ class GuardTests(unittest.TestCase):
     @staticmethod
     def nodes(count=5):
         return [{"id": str(index), "name": f"node-{index}", "enabled": True, "proxyConfigured": True} for index in range(1, count + 1)]
+
+    def test_active_probe_max_nodes_rotates_across_cycles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cfg = config(
+                state_file=Path(directory) / "state.json",
+                lock_file=Path(directory) / "lock",
+                active_probe_max_nodes=1,
+                node_ids=("1", "2", "3"),
+            )
+            good = {"expectedMatched": True, "outputTokens": 100, "reasoningTokens": 40, "outputTokensPerSecond": 100}
+            api = FakeApi(self.nodes(3), [good, good, good])
+            guard = quality_guard.Guard(cfg, api)
+            guard.run_active_cycle()
+            self.assertEqual(guard.state["active_probe_offset"], 1)
+            self.assertEqual(api.quality_calls, ["1"])
+            guard.run_active_cycle()
+            self.assertEqual(api.quality_calls, ["1", "2"])
 
     def test_hard_signal_quarantines_and_healthy_recovery_restores(self):
         with tempfile.TemporaryDirectory() as directory:

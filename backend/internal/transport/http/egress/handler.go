@@ -174,6 +174,7 @@ type qualityGuardConfig struct {
 	MaxOutputTokens       int      `json:"max_output_tokens"`
 	FailClosed            bool     `json:"fail_closed"`
 	MinGenerationMS       int      `json:"min_generation_ms"`
+	ActiveProbeMaxNodes   int      `json:"active_probe_max_nodes"`
 	Prompt                string   `json:"prompt"`
 	Expected              string   `json:"expected"`
 }
@@ -244,6 +245,7 @@ func (h *Handler) qualityGuardStatus(c *gin.Context) {
 			"consecutive_errors": state.Guard.ConsecutiveErrors, "quarantine_seconds": state.Guard.QuarantineSeconds,
 			"min_healthy_nodes": state.Guard.MinHealthyNodes, "max_output_tokens": state.Guard.MaxOutputTokens,
 			"fail_closed": state.Guard.FailClosed, "min_generation_ms": state.Guard.MinGenerationMS,
+			"active_probe_max_nodes": state.Guard.ActiveProbeMaxNodes,
 		},
 		"nodes": nodes, "protectedNodeIds": state.ProtectedNodeIDs, "recentEvents": state.RecentEvents,
 		"nodeSummary": gin.H{
@@ -290,6 +292,7 @@ type qualityGuardConfigRequest struct {
 	ConsecutiveErrors     int     `json:"consecutiveErrors"`
 	QuarantineSeconds     int     `json:"quarantineSeconds"`
 	MinHealthyNodes       int     `json:"minHealthyNodes"`
+	ActiveProbeMaxNodes   int     `json:"activeProbeMaxNodesPerCycle"`
 }
 
 type qualityGuardRuntimeConfigFile struct {
@@ -307,6 +310,7 @@ type qualityGuardRuntimeConfigSettings struct {
 	ConsecutiveErrors     int     `json:"consecutive_errors"`
 	QuarantineSeconds     int     `json:"quarantine_seconds"`
 	MinHealthyNodes       int     `json:"min_healthy_nodes"`
+	ActiveProbeMaxNodes   int     `json:"active_probe_max_nodes"`
 }
 
 func (h *Handler) updateQualityGuardConfig(c *gin.Context) {
@@ -335,6 +339,7 @@ func (h *Handler) updateQualityGuardConfig(c *gin.Context) {
 		PassivePollSeconds: request.PassivePollSeconds, SoftTPS: request.SoftTPS, HardTPS: request.HardTPS,
 		ConsecutiveSoft: request.ConsecutiveSoft, ConsecutiveErrors: request.ConsecutiveErrors,
 		QuarantineSeconds: request.QuarantineSeconds, MinHealthyNodes: request.MinHealthyNodes,
+		ActiveProbeMaxNodes: request.ActiveProbeMaxNodes,
 	}}
 	if err := saveQualityGuardRuntimeConfig(h.guardConfigPath, value); err != nil {
 		response.Error(c, http.StatusServiceUnavailable, "qualityGuardConfigWriteFailed", "质量守护策略保存失败")
@@ -364,6 +369,9 @@ func (r qualityGuardConfigRequest) validate(nodeCount int) error {
 	}
 	if r.MinHealthyNodes < 1 || r.MinHealthyNodes > nodeCount {
 		return errors.New("最少保留节点必须在受管节点数量范围内")
+	}
+	if r.ActiveProbeMaxNodes < 0 || r.ActiveProbeMaxNodes > 1000 {
+		return errors.New("每轮最多主动探测节点数必须在 0 到 1000 之间")
 	}
 	return nil
 }
