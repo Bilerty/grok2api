@@ -1020,6 +1020,7 @@ func (s *Service) createResponseAt(ctx context.Context, input Input, path string
 	// nor new evidence and can multiply a slow/failing probe.
 	holdCfg := s.qualityRetryConfig()
 	qualityHoldEnabled := shouldHoldQualityStream(input, ownership, route, operation, holdCfg)
+
 	qualityCrossAccountReplay := canReplayQualityHoldAcrossAccounts(input, ownership)
 	attemptPolicy := newRequestRoutingAttemptPolicy(int(s.maxAttempts.Load()), ownership != nil || input.ForcedAccountID != 0)
 	idempotencyID, _ := security.NewOpaqueToken(18)
@@ -1229,7 +1230,7 @@ attemptLoop:
 					err = &SelectionUnavailableError{Reason: SelectionNoAccounts}
 				}
 			}
-		} else if ownership != nil {
+		} else if ownership != nil && qualityAccountAttempts == 0 {
 			lease, err = s.selector.AcquirePinnedForKey(ctx, route.Provider, ownership.AccountID, route.ID, route.UpstreamModel, quotaMode, true, accountScope)
 		} else if input.ForcedEgressNodeID != 0 {
 			lease, err = s.selector.AcquireForKeyOnEgressNode(ctx, route.Provider, route.ID, route.UpstreamModel, quotaMode, affinityKey, excluded, !quotaProbeAttempted, accountScope, input.ForcedEgressNodeID)
@@ -1268,7 +1269,7 @@ attemptLoop:
 			// Stored Responses are pinned to one account. Return the cached 429
 			// immediately instead of spinning until the cooldown expires or
 			// replaying the request on the same account.
-			if ownership != nil || input.ForcedAccountID != 0 {
+			if input.ForcedAccountID != 0 || (ownership != nil && (!qualityHoldEnabled || qualityAccountAttempts == 0)) {
 				break attemptLoop
 			}
 			attempt--
@@ -1609,6 +1610,7 @@ attemptLoop:
 					continue
 				}
 				response.Body = replay
+
 				hasNextAccount := qualityCrossAccountReplay && attemptPolicy.hasNext(attempt) && qualityAccountAttempts < holdCfg.MaxAttempts
 				if hasNextAccount {
 					hasNextAccount = selection != nil && selection.hasAvailableCandidate(excluded, !quotaProbeAttempted)

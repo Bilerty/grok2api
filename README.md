@@ -24,6 +24,38 @@
 > Check out [DEEIX-AI / DEEIX-Chat](https://github.com/DEEIX-AI/DEEIX-Chat), a lightweight, integrated AI platform for model routing, chat, files, tools, billing, identity, and operations.
 
 > [!NOTE]
+> **This fork (lij768423-svg/grok2api) is out of the box.** Official latest plus `qualityGuard` / `requestRetry` ON: 30s hold, minOutput 8, ciphertext floor 256B / reasoning×4, burst (hold-expired short greetings and floor-met dumps still withheld), TUI follow-ups / hosted tools held, 12h missing-thinking cooldown, 15m idle. `docker compose up -d --build` starts the sidecar. Do not pull `ghcr.io/chenyme/grok2api:latest` (same numbers, intercept off). Upstream: [chenyme#1013](https://github.com/chenyme/grok2api/pull/1013) floor, [chenyme#1015](https://github.com/chenyme/grok2api/pull/1015) TUI hold — do not include this fork's `enabled: true`.
+
+## One-shot install prompt
+
+Paste this to your AI, then append every residential sticky:
+
+```text
+Follow this doc exactly:
+https://github.com/lij768423-svg/grok2api/blob/main/AI_GROK2API_INSTALL.md
+
+Primary path: lij768423-svg/grok2api (fork) + Quality Guard sidecar. Do not install CPA.
+Do not pull ghcr.io/chenyme/grok2api:latest. Clone this fork and docker compose up -d --build.
+
+This fork is out of the box: official latest + missing-thinking intercept ON.
+- hold 30s / minOutput 8 / 6 attempts / fail_closed
+- short encrypted_content stubs are not thinking; floor = max(256B, reasoning_tokens×4)
+- hold-expired short greeting + high reasoning still withheld
+- 12h missing-thinking cooldown, 15m idle; compose up -d starts the sidecar
+
+Use every residential sticky: one Mihomo listener + one Grok2API node per session.
+A single res-01 node, or merging many stickies into one pool, is not done.
+
+Machine: Linux + Docker, install into ~/grok-stack (new directory).
+Email is optional. Bring the exits and Guard up first.
+
+Residential lines (one per line):
+
+```
+
+Walkthrough: [AI_GROK2API_INSTALL.md](./AI_GROK2API_INSTALL.md). Generator: [`scripts/from_residential.py`](./scripts/from_residential.py).
+
+> [!NOTE]
 > This project is for technical research and learning purposes only. Please comply with Grok's official terms of use and local laws when using it; otherwise, you will be solely responsible for all consequences!
 
 
@@ -177,12 +209,12 @@ Each Provider keeps its own credentials, quota, health, cooldown, concurrency, a
 Official images support `linux/amd64` and `linux/arm64`.
 
 ```bash
-git clone https://github.com/chenyme/grok2api.git
+git clone https://github.com/lij768423-svg/grok2api.git
 cd grok2api
-cp config.example.yaml config.yaml
+./scripts/bootstrap-lab-config.sh
 ```
 
-Generate secrets and place them in `config.yaml`:
+Or copy `config.example.yaml` and fill secrets yourself:
 
 ```bash
 openssl rand -hex 32
@@ -199,7 +231,7 @@ bootstrapAdmin:
   password: "replace-with-a-strong-password"
 ```
 
-Start the service:
+Start the service (gateway + quality-guard sidecar):
 
 ```bash
 docker compose pull
@@ -388,14 +420,13 @@ Egress nodes are scoped to Build, Web, Console, or Web assets. The admin console
 - Fallback per scope: none, direct, or a fixed node
 - Proxy-pool mode without global cooldown after one connection failure
 - Immediate recovery probes after fixed-proxy transport failures, with per-node coalescing and bounded waiting for fast retry
-- Optional [Egress Quality Guard](./tools/egress-quality-guard/README.md) for active per-node model probes, guarded quarantine, and recovery; enable it with the built-in `quality-guard` Compose profile
+- [Egress Quality Guard](./tools/egress-quality-guard/README.md) for per-node probes, quarantine, and recovery; `docker compose up -d` starts the sidecar in passive mode
 - Nodes whose proxy username contains `{account}` are treated as lease-scoped: a passive anomaly temporarily removes only the audited account lease, then recovery pins the probe to that same account and node. An unhealthy probe renews the hold; an expired hold no longer blocks routing if the sidecar is unavailable, so stale guard state cannot strand an account indefinitely. The shared node is never disabled and the rendered proxy identity is never exposed. Ordinary fixed sticky sessions can still be managed as separate nodes
+- Give each sticky session its own fixed node (`proxyPool=false`). Do not merge several stickies into one node, or the guard can only quarantine the whole group
 
 Hysteria and TUIC are not supported yet. FlareSolverr accepts only HTTP/SOCKS proxy URLs, so automatic clearance refresh cannot use a tunnel share URL directly.
 
-To enable the guard, add a `qualityGuard` section to `config.yaml`, then start
-the profile. The main service creates and reuses a non-exportable system probe
-identity automatically:
+`config.example.yaml` already enables qualityGuard. The main service creates and reuses a non-exportable system probe identity automatically:
 
 ```yaml
 qualityGuard:
@@ -415,22 +446,21 @@ qualityGuard:
     idleAccountCooldown: 15m
 ```
 
-`requestRetry` runs on the gateway request path and is independent of the sidecar. `config.example.yaml` keeps `enabled: false`; set it true to intercept. When enabled, a thinking-model stream with enough visible output and no streamed reasoning is **not delivered**; replay-safe stateless requests may try another account. TUI follow-ups (`previous_response_id`) and hosted-tool turns are still held for classification, but a quality withhold never replays account-bound state or side-effecting tools across accounts; `onExhausted` returns `503 quality_degraded` or releases that held body. Context compaction, image, video, and ForcedEgress probe requests are unchanged.
+
+`requestRetry` runs on the gateway request path and is independent of the sidecar. This fork enables it. A thinking-model stream with enough visible output and no streamed reasoning is **not delivered**; another account is tried. TUI follow-ups (`previous_response_id`) and hosted-tool turns stay held — the first attempt stays pinned, a withhold unpins and rotates. Image, video, and ForcedEgress probe requests are unchanged. If every attempt still has no reasoning, `onExhausted` either returns `503 quality_degraded` or delivers the last body. Context compaction is exempt from the hold.
+
 
 ```bash
-docker compose --profile quality-guard up -d --build
+docker compose up -d
 ```
 
 Existing preview deployments that still contain `clientKeyID` can upgrade
 directly. The field is accepted for compatibility but ignored and can be
 removed; any manually created probe key is intentionally left untouched.
 
-After changing this configuration, run `docker compose --profile quality-guard restart grok2api egress-quality-guard` to reload the base settings; policy edits made in the admin page still hot-reload.
+After changing this configuration, run `docker compose restart grok2api egress-quality-guard` to reload the base settings; policy edits made in the admin page still hot-reload.
 
-The normal `docker compose up -d` command does not start the guard or generate
-probe traffic. The sidecar receives a narrowly scoped internal credential from
-the main service and never stores or uses the administrator password. See the
-linked guide before enabling automatic quarantine.
+The sidecar receives a narrowly scoped internal credential from the main service and never stores or uses the administrator password. See the linked guide before enabling automatic quarantine.
 
 Resin usernames can contain `{account}`:
 

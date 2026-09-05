@@ -371,10 +371,11 @@ func shouldHoldQualityStream(input Input, ownership *inferencedomain.ResponseOwn
 		return false
 	}
 	switch operation {
-	case audit.OperationChat, audit.OperationResponses, audit.OperationMessages, "":
+	case audit.OperationChat, audit.OperationResponses, audit.OperationMessages, audit.OperationCompaction, "":
 	default:
 		return false
 	}
+
 	// Context compaction is a system summary operation, not a normal reasoning
 	// turn. Holding it can quarantine a healthy account for producing the
 	// expected summary without streamed reasoning. Keep both compaction forms

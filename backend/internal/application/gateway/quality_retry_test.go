@@ -112,6 +112,21 @@ func TestClassifyQualityHoldBurst(t *testing.T) {
 			sig:  QualityStreamSignals{HasThinking: true, VisibleTokens: 80, ReasoningTokens: 140, EncryptedBytes: 2000, EncryptedFloor: 560, UsageReported: true, FirstVisible: true, VisibleFlushMS: 200, Terminal: true},
 			want: QualityDeliver,
 		},
+		{
+			name: "floor-met short visible fast dump withholds",
+			sig:  QualityStreamSignals{HasThinking: true, VisibleTokens: 3, ReasoningTokens: 1371, EncryptedBytes: 8000, FirstVisible: true, VisibleFlushMS: 200},
+			want: QualityWithhold,
+		},
+		{
+			name: "floor-met 8 visible 140 reasoning in under 1s withholds",
+			sig:  QualityStreamSignals{HasThinking: true, VisibleTokens: 8, ReasoningTokens: 140, EncryptedBytes: 2000, FirstVisible: true, VisibleFlushMS: 660},
+			want: QualityWithhold,
+		},
+		{
+			name: "floor-met long visible fast flush delivers",
+			sig:  QualityStreamSignals{HasThinking: true, VisibleTokens: 80, ReasoningTokens: 140, EncryptedBytes: 2000, FirstVisible: true, VisibleFlushMS: 200},
+			want: QualityDeliver,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1225,6 +1240,7 @@ func TestShouldHoldQualityStreamGates(t *testing.T) {
 	if shouldHoldQualityStream(input, nil, route, audit.OperationImage, cfg) {
 		t.Fatal("image must not hold")
 	}
+
 	if shouldHoldQualityStream(input, nil, route, audit.OperationCompaction, cfg) {
 		t.Fatal("compaction must not enter missing-thinking hold")
 	}
@@ -1235,6 +1251,7 @@ func TestShouldHoldQualityStreamGates(t *testing.T) {
 	}
 	tui := input
 	tui.Body = []byte(`{"input":[{"role":"user","content":"` + tuiCompactionPrompt + `"}]}`)
+
 	if shouldHoldQualityStream(tui, nil, route, audit.OperationResponses, cfg) {
 		t.Fatal("tui compaction prompt must not enter missing-thinking hold")
 	}
